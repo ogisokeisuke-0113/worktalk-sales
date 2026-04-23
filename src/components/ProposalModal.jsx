@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, LOSS_REASONS, DEFAULT_PROPOSAL } from '../constants'
 
-export default function ProposalSidePanel({ proposal, onSave, onClose, apiKey }) {
+export default function ProposalSidePanel({ proposal, onSave, onClose, apiKey, salesReps = [] }) {
   const isEdit = !!proposal
   const [form, setForm] = useState({ ...DEFAULT_PROPOSAL })
   const [aiLoading, setAiLoading] = useState(false)
@@ -120,10 +120,10 @@ JSONのみ出力してください。`
 
   const getTypeIcon = (type) => {
     switch (type) {
-      case 'create': return { icon: '✦', color: 'bg-blue-500' }
-      case 'status': return { icon: '→', color: 'bg-purple-500' }
-      case 'note': return { icon: '✎', color: 'bg-yellow-500' }
-      default: return { icon: '•', color: 'bg-gray-400' }
+      case 'create': return { icon: '✦', color: 'bg-[#4a82ae]' }
+      case 'status': return { icon: '→', color: 'bg-[#5a7a8a]' }
+      case 'note': return { icon: '✎', color: 'bg-[#b45309]' }
+      default: return { icon: '•', color: 'bg-slate-400' }
     }
   }
 
@@ -154,7 +154,7 @@ JSONのみ出力してください。`
             onClick={() => setActiveTab('info')}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               activeTab === 'info'
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                ? 'text-[#2d6a9e] border-b-2 border-[#2d6a9e] bg-sky-50/50'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -164,7 +164,7 @@ JSONのみ出力してください。`
             onClick={() => setActiveTab('timeline')}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               activeTab === 'timeline'
-                ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50'
+                ? 'text-[#2d6a9e] border-b-2 border-[#2d6a9e] bg-sky-50/50'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
@@ -203,9 +203,11 @@ JSONのみ出力してください。`
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">営業担当</label>
-                  <input type="text" value={form.salesRep || ''} onChange={e => set('salesRep', e.target.value)}
-                    placeholder="担当者名"
-                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <select value={form.salesRep || ''} onChange={e => set('salesRep', e.target.value)}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">選択してください</option>
+                    {salesReps.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">担当者</label>
@@ -256,11 +258,11 @@ JSONのみ出力してください。`
               </div>
 
               {/* Amount Fields */}
-              <div className="bg-blue-50 rounded-lg p-3 space-y-3">
-                <p className="text-xs font-bold text-blue-800">金額情報</p>
+              <div className="bg-sky-50 rounded-lg p-3 space-y-3">
+                <p className="text-xs font-bold text-[#2d6a9e]">金額情報</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-blue-700 mb-1">見込み金額（読み）</label>
+                    <label className="block text-xs font-semibold text-[#4a82ae] mb-1">見込み金額（読み）</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">¥</span>
                       <input type="number" value={form.expectedAmount || ''} min="0"
@@ -270,7 +272,7 @@ JSONのみ出力してください。`
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-blue-700 mb-1">受注金額</label>
+                    <label className="block text-xs font-semibold text-[#4a82ae] mb-1">受注金額</label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">¥</span>
                       <input type="number" value={form.actualAmount || ''} min="0"
@@ -285,7 +287,7 @@ JSONのみ出力してください。`
               {/* Dates */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">決済者アポ日</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">決裁者アポ日</label>
                   <input type="date" value={form.decisionMakerDate} onChange={e => set('decisionMakerDate', e.target.value)}
                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 </div>
@@ -298,7 +300,7 @@ JSONのみ出力してください。`
 
               {/* Loss Reason */}
               {form.status === '失注' && (
-                <div className="bg-red-50 rounded-lg p-3 space-y-3">
+                <div className="bg-rose-50 rounded-lg p-3 space-y-3">
                   <p className="text-xs font-bold text-red-700">失注情報</p>
                   <div>
                     <label className="block text-xs font-semibold text-red-600 mb-1">失注理由</label>
@@ -321,7 +323,7 @@ JSONのみ出力してください。`
               <div className="flex items-center gap-3">
                 <input type="checkbox" id="priorityFlag" checked={form.priorityFlag}
                   onChange={e => set('priorityFlag', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 rounded" />
+                  className="h-4 w-4 text-[#4a82ae] rounded" />
                 <label htmlFor="priorityFlag" className="text-sm font-medium text-slate-700">優先フラグ</label>
               </div>
 
@@ -344,7 +346,7 @@ JSONのみ出力してください。`
                   キャンセル
                 </button>
                 <button type="submit"
-                  className="px-5 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors font-medium">
+                  className="px-5 py-2 text-sm text-white bg-[#2d6a9e] rounded-md hover:bg-[#1a5285] transition-colors font-medium">
                   {isEdit ? '更新' : '追加'}
                 </button>
               </div>
@@ -413,7 +415,7 @@ JSONのみ出力してください。`
                   キャンセル
                 </button>
                 <button type="button" onClick={() => handleSubmit()}
-                  className="px-5 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors font-medium">
+                  className="px-5 py-2 text-sm text-white bg-[#2d6a9e] rounded-md hover:bg-[#1a5285] transition-colors font-medium">
                   {isEdit ? '更新' : '追加'}
                 </button>
               </div>

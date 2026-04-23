@@ -12,7 +12,7 @@ const APP_FIELDS = [
   { key: 'other', label: 'その他', type: 'text' },
   { key: 'position', label: '役職', type: 'text' },
   { key: 'status', label: '提案状況', type: 'select', options: PROPOSAL_STATUSES },
-  { key: 'decisionMakerDate', label: '決済者アポ日', type: 'date' },
+  { key: 'decisionMakerDate', label: '決裁者アポ日', type: 'date' },
   { key: 'conclusionDate', label: '結論日', type: 'date' },
   { key: 'relationship', label: '関係性', type: 'select', options: RELATIONSHIPS },
   { key: 'lossReason', label: '失注理由', type: 'select', options: LOSS_REASONS },
@@ -37,7 +37,7 @@ function autoMap(csvHeaders) {
     'ステータス': 'status', '状況': 'status', '進捗': 'status',
     '規模': 'employeeScale', '社員数': 'employeeScale', '従業員数': 'employeeScale',
     '優先': 'priorityFlag', 'フラグ': 'priorityFlag',
-    '決済者アポ': 'decisionMakerDate', '再訪日': 'decisionMakerDate',
+    '決裁者アポ': 'decisionMakerDate', '再訪日': 'decisionMakerDate',
     '結論': 'conclusionDate',
     'メモ': 'notes', 'コメント': 'notes',
     '理由': 'lossReason',
@@ -142,13 +142,18 @@ function normalizeBoolean(val) {
   return ['true', '1', 'yes', 'はい', 'あり', 'o', '○', '◯', '◎', 'on'].includes(s)
 }
 
-export default function CsvImportModal({ onImport, onClose }) {
+function makeDedupKey(p) {
+  return [p.companyName, p.salesRep, p.initialDate].map(v => (v || '').trim().toLowerCase()).join('|')
+}
+
+export default function CsvImportModal({ onImport, onClose, existingProposals = [] }) {
   const [step, setStep] = useState('upload')
   const [csvHeaders, setCsvHeaders] = useState([])
   const [csvRows, setCsvRows] = useState([])
   const [mapping, setMapping] = useState({})
   const [importMode, setImportMode] = useState('append')
   const [previewData, setPreviewData] = useState([])
+  const [duplicateCount, setDuplicateCount] = useState(0)
   const [error, setError] = useState('')
   const [skippedRows, setSkippedRows] = useState(0)
 
@@ -222,7 +227,7 @@ export default function CsvImportModal({ onImport, onClose }) {
         priorityFlag: false,
         other: '',
         position: '',
-        status: '未提案',
+        status: 'アポ確定',
         decisionMakerDate: '',
         conclusionDate: '',
         relationship: '新規',
@@ -250,9 +255,18 @@ export default function CsvImportModal({ onImport, onClose }) {
           if (field.options.includes(val)) {
             obj[fieldKey] = val
           } else {
-            const match = field.options.find(o =>
-              o.includes(val) || val.includes(o)
-            )
+            // Exact match first, then try normalized matching
+            const match = field.options.find(o => o === val) ||
+              field.options.find(o => {
+                const ov = o.replace(/[・／/\s]/g, '')
+                const vv = val.replace(/[・／/\s]/g, '')
+                return ov === vv
+              }) ||
+              field.options.find(o => {
+                // Only match if the value equals one of the segments (split by ・/)
+                const segments = o.split(/[・／/]/)
+                return segments.some(s => s === val)
+              })
             obj[fieldKey] = match || val
           }
         } else {
@@ -260,9 +274,13 @@ export default function CsvImportModal({ onImport, onClose }) {
         }
       })
       return obj
-    }).filter(obj => obj.companyName)
+    }).filter(obj => obj.companyName && obj.status !== '未提案')
 
-    setPreviewData(converted)
+    // Dedup: remove rows that already exist in current data
+    const existingKeys = new Set(existingProposals.map(makeDedupKey))
+    const unique = converted.filter(p => !existingKeys.has(makeDedupKey(p)))
+    setDuplicateCount(converted.length - unique.length)
+    setPreviewData(unique)
     setStep('preview')
   }
 
@@ -288,12 +306,12 @@ export default function CsvImportModal({ onImport, onClose }) {
 
         <div className="p-4">
           {error && (
-            <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md text-sm">{error}</div>
+            <div className="mb-4 p-3 bg-rose-50 text-[#be123c] rounded-md text-sm">{error}</div>
           )}
 
           {step === 'upload' && (
             <div>
-              <div className="mb-4 p-4 bg-blue-50 rounded-md text-sm text-blue-800">
+              <div className="mb-4 p-4 bg-sky-50 rounded-md text-sm text-[#2d6a9e]">
                 <p className="font-medium mb-2">Googleスプレッドシートからのインポート手順：</p>
                 <ol className="list-decimal list-inside space-y-1">
                   <li>Googleスプレッドシートを開く</li>
@@ -308,7 +326,7 @@ export default function CsvImportModal({ onImport, onClose }) {
               >
                 <p className="text-slate-500 mb-3">CSVファイルをドラッグ＆ドロップ</p>
                 <p className="text-slate-400 text-sm mb-4">または</p>
-                <label className="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 cursor-pointer transition-colors">
+                <label className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] cursor-pointer transition-colors">
                   ファイルを選択
                   <input type="file" accept=".csv,.tsv,.txt" onChange={handleFile} className="hidden" />
                 </label>
@@ -322,7 +340,7 @@ export default function CsvImportModal({ onImport, onClose }) {
                 CSVの各カラムをアプリのフィールドに対応付けてください。自動マッピング済みのものは変更可能です。
               </p>
               {skippedRows > 0 && (
-                <p className="text-xs text-blue-600 mb-3">
+                <p className="text-xs text-[#4a82ae] mb-3">
                   ※ 先頭{skippedRows}行の空行をスキップしてヘッダーを検出しました
                 </p>
               )}
@@ -338,7 +356,7 @@ export default function CsvImportModal({ onImport, onClose }) {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {csvHeaders.map((header, idx) => (
-                      <tr key={idx} className={mapping[idx] ? 'bg-green-50' : ''}>
+                      <tr key={idx} className={mapping[idx] ? 'bg-teal-50' : ''}>
                         <td className="px-3 py-2 font-medium text-slate-700">{header}</td>
                         <td className="px-3 py-2 text-slate-500 max-w-[200px] truncate">
                           {csvRows[0]?.[idx] || '(空)'}
@@ -348,7 +366,7 @@ export default function CsvImportModal({ onImport, onClose }) {
                             value={mapping[idx] || ''}
                             onChange={e => updateMapping(idx, e.target.value)}
                             className={`border rounded-md px-2 py-1 text-sm w-full ${
-                              mapping[idx] ? 'border-green-400 bg-green-50' : 'border-slate-300'
+                              mapping[idx] ? 'border-green-400 bg-teal-50' : 'border-slate-300'
                             }`}
                           >
                             <option value="">（スキップ）</option>
@@ -394,9 +412,14 @@ export default function CsvImportModal({ onImport, onClose }) {
           {step === 'preview' && (
             <div>
               <div className="flex items-center justify-between mb-4">
-                <p className="text-sm text-slate-600">
+                <div className="text-sm text-slate-600">
                   <span className="font-bold text-lg text-slate-800">{previewData.length}件</span>のデータをインポートします
-                </p>
+                  {duplicateCount > 0 && (
+                    <span className="ml-2 text-amber-600 text-xs font-medium bg-amber-50 px-2 py-0.5 rounded">
+                      重複 {duplicateCount}件 除外済み
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-3">
                   <label className="flex items-center gap-2 text-sm">
                     <input type="radio" name="mode" value="append"
@@ -449,7 +472,7 @@ export default function CsvImportModal({ onImport, onClose }) {
                   戻る
                 </button>
                 <button onClick={executeImport}
-                  className="px-4 py-2 text-sm text-white bg-green-600 rounded-md hover:bg-green-700">
+                  className="px-4 py-2 text-sm text-white bg-[#0f766e] rounded-md hover:bg-[#0a5c56]">
                   インポート実行（{previewData.length}件）
                 </button>
               </div>
@@ -462,6 +485,11 @@ export default function CsvImportModal({ onImport, onClose }) {
               <p className="text-lg font-bold text-slate-800 mb-2">
                 {previewData.length}件のデータをインポートしました
               </p>
+              {duplicateCount > 0 && (
+                <p className="text-sm text-amber-600 mb-2">
+                  重複データ {duplicateCount}件 はスキップされました
+                </p>
+              )}
               <p className="text-sm text-slate-500 mb-6">提案リストで確認してください</p>
               <button onClick={onClose}
                 className="px-6 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700">

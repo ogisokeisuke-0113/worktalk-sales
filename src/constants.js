@@ -1,16 +1,18 @@
 export const INDUSTRIES = [
-  'IT・ソフトウェア',
-  '建設・不動産',
-  '医療・福祉・介護',
-  '教育・学習支援',
-  '製造業',
-  '小売・流通',
-  '飲食・フード',
-  '金融・保険',
-  '人材・HR',
-  '広告・マーケティング',
-  '物流・運輸',
-  'サービス業（その他）',
+  'IT・SaaS',
+  '人材',
+  '不動産',
+  '建設',
+  '住宅',
+  '医療・福祉',
+  '教育',
+  'メーカー',
+  'コンサル・士業',
+  'M&A',
+  '広告・マーケ',
+  '保険・金融',
+  '商社・卸',
+  'サービス・その他',
 ]
 
 export const EMPLOYEE_SCALES = [
@@ -25,17 +27,23 @@ export const EMPLOYEE_SCALES = [
   '700~800',
   '800~900',
   '900~1000',
-  '1000~',
+  '1000~2000',
+  '2000~3000',
+  '3000~4000',
+  '4000~5000',
+  '5000~6000',
+  '6000~7000',
+  '7000~8000',
+  '8000~9000',
+  '9000~10000',
+  '10000~',
 ]
 
 export const PROPOSAL_STATUSES = [
-  '未提案',
-  'アポ調整中',
   'アポ確定',
-  'アポ獲得不可',
   '担当者合意',
-  '決済者アポ調整中',
-  '決済者合意',
+  '決裁者アポ調整中',
+  '決裁者合意',
   '受注',
   '失注',
 ]
@@ -66,50 +74,55 @@ export const TELEAPO_STATUSES = [
   'アポ確定',
 ]
 
+export const CALL_RESULTS = [
+  '不在',
+  '受付ブロック',
+  '担当者不在',
+  '資料送付済',
+  '折り返し依頼',
+  'ヒアリング済',
+  'アポ獲得',
+  '断り',
+]
+
 export const STATUS_COLORS = {
-  '未提案': 'bg-gray-100 text-gray-700',
-  'アポ調整中': 'bg-blue-100 text-blue-700',
-  'アポ確定': 'bg-blue-200 text-blue-800',
-  'アポ獲得不可': 'bg-red-100 text-red-700',
-  '担当者合意': 'bg-yellow-100 text-yellow-800',
-  '決済者アポ調整中': 'bg-purple-100 text-purple-700',
-  '決済者合意': 'bg-green-100 text-green-700',
-  '受注': 'bg-green-200 text-green-800',
-  '失注': 'bg-red-200 text-red-800',
+  'アポ確定': 'bg-sky-100 text-[#2d6a9e]',
+
+  '担当者合意': 'bg-amber-50 text-[#b45309]',
+  '決裁者アポ調整中': 'bg-slate-100 text-[#5a7a8a]',
+  '決裁者合意': 'bg-teal-50 text-[#0f766e]',
+  '受注': 'bg-teal-100 text-[#0f766e]',
+  '失注': 'bg-rose-100 text-[#be123c]',
 }
 
 export const TELEAPO_STATUS_COLORS = {
-  '未架電': 'bg-gray-100 text-gray-700',
-  '架電済': 'bg-blue-100 text-blue-700',
-  '折り返し待ち': 'bg-yellow-100 text-yellow-700',
-  'アポ確定': 'bg-green-100 text-green-700',
+  '未架電': 'bg-slate-100 text-slate-600',
+  '架電済': 'bg-sky-50 text-[#4a82ae]',
+  '折り返し待ち': 'bg-amber-50 text-[#b45309]',
+  'アポ確定': 'bg-teal-50 text-[#0f766e]',
 }
 
 export const KANBAN_BORDER_COLORS = {
-  '未提案': 'border-l-gray-400',
-  'アポ調整中': 'border-l-blue-400',
-  'アポ確定': 'border-l-blue-600',
-  'アポ獲得不可': 'border-l-red-400',
-  '担当者合意': 'border-l-yellow-500',
-  '決済者アポ調整中': 'border-l-purple-400',
-  '決済者合意': 'border-l-green-400',
-  '受注': 'border-l-green-600',
-  '失注': 'border-l-red-600',
+  'アポ確定': 'border-l-[#4a82ae]',
+
+  '担当者合意': 'border-l-[#b45309]',
+  '決裁者アポ調整中': 'border-l-[#5a7a8a]',
+  '決裁者合意': 'border-l-[#0f766e]',
+  '受注': 'border-l-[#0f766e]',
+  '失注': 'border-l-[#be123c]',
 }
 
 export const KANBAN_HEADER_COLORS = {
-  '未提案': 'bg-gray-200 text-gray-700',
-  'アポ調整中': 'bg-blue-200 text-blue-700',
-  'アポ確定': 'bg-blue-300 text-blue-800',
-  'アポ獲得不可': 'bg-red-200 text-red-700',
-  '担当者合意': 'bg-yellow-200 text-yellow-800',
-  '決済者アポ調整中': 'bg-purple-200 text-purple-700',
-  '決済者合意': 'bg-green-200 text-green-700',
-  '受注': 'bg-green-300 text-green-800',
-  '失注': 'bg-red-300 text-red-800',
+  'アポ確定': 'bg-sky-200 text-[#2d6a9e]',
+
+  '担当者合意': 'bg-amber-100 text-[#b45309]',
+  '決裁者アポ調整中': 'bg-slate-200 text-[#5a7a8a]',
+  '決裁者合意': 'bg-teal-100 text-[#0f766e]',
+  '受注': 'bg-teal-200 text-[#0f766e]',
+  '失注': 'bg-rose-200 text-[#be123c]',
 }
 
-export const FUNNEL_COLORS = ['#94a3b8', '#3b82f6', '#2563eb', '#f59e0b', '#8b5cf6', '#10b981', '#059669']
+export const FUNNEL_COLORS = ['#dbe6f0', '#b8cfe0', '#93b5d0', '#6e9bbf', '#4a82ae', '#2d6a9e', '#1a5285']
 
 export const DEFAULT_PROPOSAL = {
   id: '',
@@ -122,7 +135,7 @@ export const DEFAULT_PROPOSAL = {
   priorityFlag: false,
   other: '',
   position: '',
-  status: '未提案',
+  status: 'アポ確定',
   decisionMakerDate: '',
   conclusionDate: '',
   relationship: '新規',
