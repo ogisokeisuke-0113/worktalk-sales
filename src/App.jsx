@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance } from './storage'
 import Dashboard from './components/Dashboard'
 import ProposalList from './components/ProposalList'
@@ -15,6 +15,93 @@ const TABS = [
   { id: 'teleapo', label: 'テレアポ' },
   { id: 'performance', label: '成果分析' },
 ]
+
+// ========== スプレッドシート同期 ==========
+const SHEET_COL_MAP = {
+  '初回提案日時': 'initialDate',
+  '企業名': 'companyName',
+  '営業担当': 'salesRep',
+  '担当者': 'contactName',
+  '役職': 'position',
+  '業種': 'industry',
+  '企業規模': 'employeeScale',
+  '提案状況': 'status',
+  '決裁者アポ日': 'decisionMakerDate',
+  '結論日': 'conclusionDate',
+  '関係性': 'relationship',
+  '失注理由': 'lossReason',
+  '失注理由詳細': 'lossReasonDetail',
+  '備考': 'notes',
+}
+
+function formatSheetDate(val) {
+  if (!val) return ''
+  const s = String(val).trim()
+  if (!s) return ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  const slashMatch = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/)
+  if (slashMatch) return `${slashMatch[1]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[3].padStart(2, '0')}`
+  const d = new Date(s)
+  if (!isNaN(d)) return d.toISOString().slice(0, 10)
+  return s
+}
+
+function mapSheetRow(row) {
+  const p = {}
+  for (const [jpKey, engKey] of Object.entries(SHEET_COL_MAP)) {
+    let val = row[jpKey]
+    if (val === undefined || val === null || val === '') {
+      p[engKey] = ''
+      continue
+    }
+    if (['initialDate', 'decisionMakerDate', 'conclusionDate'].includes(engKey)) {
+      p[engKey] = formatSheetDate(val)
+    } else {
+      p[engKey] = String(val).trim()
+    }
+  }
+  if (row._rowIndex) p._sheetRowIndex = row._rowIndex
+  return p
+}
+
+function upsertFromSheet(existing, incoming) {
+  const result = [...existing]
+  for (const row of incoming) {
+    if (!row.companyName) continue
+    // sheetRowIndex で一致 → なければ企業名で一致
+    let idx = row._sheetRowIndex !== undefined
+      ? result.findIndex(p => p._sheetRowIndex === row._sheetRowIndex)
+      : -1
+    if (idx < 0) idx = result.findIndex(p => p.companyName === row.companyName)
+
+    if (idx >= 0) {
+      // 既存: シートの項目で上書き、Sales Board固有項目は保持
+      result[idx] = {
+        ...result[idx],
+        ...row,
+        id: result[idx].id,
+        activityLog: result[idx].activityLog || [],
+        priorityFlag: result[idx].priorityFlag ?? false,
+        expectedAmount: result[idx].expectedAmount ?? 0,
+        actualAmount: result[idx].actualAmount ?? 0,
+      }
+    } else {
+      // 新規: シートから追加
+      result.push({
+        id: crypto.randomUUID(),
+        priorityFlag: false,
+        other: '',
+        expectedAmount: 0,
+        actualAmount: 0,
+        lossReasonDetail: '',
+        activityLog: [{ date: new Date().toISOString(), type: 'create', note: 'スプレッドシートから同期' }],
+        ...row,
+      })
+    }
+  }
+  return result
+}
+// ==========================================
 
 const INDUSTRY_MIGRATION = {
   'IT・ソフトウェア': 'IT・SaaS',
@@ -72,6 +159,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [proposalFilter, setProposalFilter] = useState(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
+  const [syncStatus, setSyncStatus] = useState(null) // null | { status:'loading'|'ok'|'error', time, count, message }
+  const hasSyncedRef = useRef(false)
   const userMenuRef = useRef(null)
 
   // ダッシュボードからフィルタ付きで提案リストに遷移
@@ -90,6 +179,30 @@ export default function App() {
   useEffect(() => { saveUsers(users) }, [users])
   useEffect(() => { saveCurrentUser(currentUser) }, [currentUser])
   useEffect(() => { savePerformance(performance) }, [performance])
+
+  // スプレッドシート自動同期
+  const syncFromSheet = useCallback(async (url) => {
+    if (!url) return
+    setSyncStatus({ status: 'loading' })
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const rows = await res.json()
+      const mapped = rows.map(mapSheetRow).filter(r => r.companyName)
+      setProposals(prev => upsertFromSheet(prev, mapped))
+      setSyncStatus({ status: 'ok', time: new Date(), count: mapped.length })
+    } catch (e) {
+      setSyncStatus({ status: 'error', message: e.message, time: new Date() })
+    }
+  }, [])
+
+  // ログイン後に一度だけ自動同期
+  useEffect(() => {
+    if (currentUser && settings.sheetSyncUrl && !hasSyncedRef.current) {
+      hasSyncedRef.current = true
+      syncFromSheet(settings.sheetSyncUrl)
+    }
+  }, [currentUser, settings.sheetSyncUrl, syncFromSheet])
 
   // Close user menu on outside click
   useEffect(() => {
@@ -277,7 +390,15 @@ export default function App() {
           />
         )}
         {activeTab === 'settings' && (
-          <Settings settings={settings} setSettings={setSettings} users={users} setUsers={setUsers} currentUser={currentUser} />
+          <Settings
+            settings={settings}
+            setSettings={setSettings}
+            users={users}
+            setUsers={setUsers}
+            currentUser={currentUser}
+            syncStatus={syncStatus}
+            onSync={() => syncFromSheet(settings.sheetSyncUrl)}
+          />
         )}
       </main>
     </div>

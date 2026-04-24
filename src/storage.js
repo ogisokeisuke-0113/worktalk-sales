@@ -33,9 +33,10 @@ export function saveTeleapo(items) {
 export function loadSettings() {
   try {
     const data = localStorage.getItem(SETTINGS_KEY)
-    return data ? JSON.parse(data) : { apiKey: '' }
+    const defaults = { apiKey: '', sheetSyncUrl: '' }
+    return data ? { ...defaults, ...JSON.parse(data) } : defaults
   } catch {
-    return { apiKey: '' }
+    return { apiKey: '', sheetSyncUrl: '' }
   }
 }
 
