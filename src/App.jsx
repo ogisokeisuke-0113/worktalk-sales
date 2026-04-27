@@ -101,10 +101,15 @@ function upsertFromSheet(existing, incoming) {
     if (idx < 0) idx = result.findIndex(p => p.companyName === row.companyName)
 
     if (idx >= 0) {
-      // 既存: シートの項目で上書き、Sales Board固有項目は保持
+      // 既存: シートの項目で上書き（空欄の場合は既存の値を保持）、Sales Board固有項目は保持
+      const merged = { ...result[idx] }
+      for (const [k, v] of Object.entries(row)) {
+        if (v !== '' && v !== null && v !== undefined) {
+          merged[k] = v
+        }
+      }
       result[idx] = {
-        ...result[idx],
-        ...row,
+        ...merged,
         id: result[idx].id,
         activityLog: result[idx].activityLog || [],
         priorityFlag: result[idx].priorityFlag ?? false,
