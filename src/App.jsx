@@ -97,7 +97,8 @@ function mapSheetRow(row) {
   for (const [jpKey, engKey] of Object.entries(SHEET_COL_MAP)) {
     let val = row[jpKey]
     if (val === undefined || val === null || val === '') {
-      p[engKey] = ''
+      // 既に値がセット済みなら空欄で上書きしない（企業規模/従業員規模の重複キー対策）
+      if (!(engKey in p)) p[engKey] = ''
       continue
     }
     if (['initialDate', 'decisionMakerDate', 'conclusionDate'].includes(engKey)) {
