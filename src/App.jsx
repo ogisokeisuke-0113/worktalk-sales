@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys } from './storage'
+import { EMPLOYEE_SCALES } from './constants'
 import Dashboard from './components/Dashboard'
 import ProposalList from './components/ProposalList'
 import SalesRepView from './components/SalesRepView'
@@ -72,6 +73,17 @@ function formatSheetDate(val) {
   return s
 }
 
+// 企業規模の表記ゆれを正規化（半角~→全角〜、名なし→名あり）
+function normalizeScale(val) {
+  if (!val) return val
+  const strip = s => s.replace(/~/g, '〜').replace(/名/g, '').replace(/\s/g, '').trim()
+  const normalized = strip(String(val))
+  for (const scale of EMPLOYEE_SCALES) {
+    if (strip(scale) === normalized) return scale
+  }
+  return String(val).trim()
+}
+
 function mapSheetRow(row) {
   const p = {}
   for (const [jpKey, engKey] of Object.entries(SHEET_COL_MAP)) {
@@ -82,6 +94,8 @@ function mapSheetRow(row) {
     }
     if (['initialDate', 'decisionMakerDate', 'conclusionDate'].includes(engKey)) {
       p[engKey] = formatSheetDate(val)
+    } else if (engKey === 'employeeScale') {
+      p[engKey] = normalizeScale(val)
     } else {
       p[engKey] = String(val).trim()
     }
