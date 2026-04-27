@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line,
 } from 'recharts'
-import { FUNNEL_COLORS } from '../constants'
+import { FUNNEL_COLORS, EMPLOYEE_SCALES } from '../constants'
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
@@ -263,9 +263,13 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
   const scaleData = useMemo(() => {
     const map = {}
     const wonStatuses = ['受注', '決裁者合意']
+    const concludedStatuses = ['受注', '決裁者合意', '失注']
 
-    filtered.filter(p => p.status !== 'アポ確定').forEach(p => {
+    // 結論済み案件のみを対象（進行中は除外）
+    filtered.filter(p => concludedStatuses.includes(p.status)).forEach(p => {
       if (!p.employeeScale) return
+      // 旧区分データは除外（EMPLOYEE_SCALES に含まれないもの）
+      if (!EMPLOYEE_SCALES.includes(p.employeeScale)) return
       if (!map[p.employeeScale]) map[p.employeeScale] = { name: p.employeeScale, denominator: 0, won: 0 }
       map[p.employeeScale].denominator++
       if (wonStatuses.includes(p.status)) map[p.employeeScale].won++
@@ -273,12 +277,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
 
     return Object.values(map)
       .map(d => ({ ...d, rate: d.denominator > 0 ? Number(((d.won / d.denominator) * 100).toFixed(1)) : 0 }))
-      .filter(d => d.rate > 0)
-      .sort((a, b) => {
-        const numA = parseInt(a.name) || 0
-        const numB = parseInt(b.name) || 0
-        return numA - numB
-      })
+      .filter(d => d.denominator > 0)
+      // EMPLOYEE_SCALES の定義順でソート
+      .sort((a, b) => EMPLOYEE_SCALES.indexOf(a.name) - EMPLOYEE_SCALES.indexOf(b.name))
   }, [filtered])
 
   const lossReasonData = useMemo(() => {
