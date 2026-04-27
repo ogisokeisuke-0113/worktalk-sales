@@ -90,3 +90,17 @@ export function loadPerformance() {
 export function savePerformance(items) {
   localStorage.setItem(PERFORMANCE_KEY, JSON.stringify(items))
 }
+
+// 削除済み企業キー（同期で復活させない）
+const DELETED_KEYS_KEY = 'worktalk_deleted_keys'
+
+export function loadDeletedKeys() {
+  try {
+    const data = localStorage.getItem(DELETED_KEYS_KEY)
+    return data ? new Set(JSON.parse(data)) : new Set()
+  } catch { return new Set() }
+}
+
+export function saveDeletedKeys(keys) {
+  localStorage.setItem(DELETED_KEYS_KEY, JSON.stringify([...keys]))
+}

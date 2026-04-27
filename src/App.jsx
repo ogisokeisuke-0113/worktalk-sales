@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance } from './storage'
+import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys } from './storage'
 import Dashboard from './components/Dashboard'
 import ProposalList from './components/ProposalList'
 import SalesRepView from './components/SalesRepView'
@@ -186,6 +186,7 @@ export default function App() {
   const [proposalFilter, setProposalFilter] = useState(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null) // null | { status:'loading'|'ok'|'error', time, count, message }
+  const [deletedKeys, setDeletedKeys] = useState(() => loadDeletedKeys())
   const hasSyncedRef = useRef(false)
   const userMenuRef = useRef(null)
 
@@ -205,6 +206,7 @@ export default function App() {
   useEffect(() => { saveUsers(users) }, [users])
   useEffect(() => { saveCurrentUser(currentUser) }, [currentUser])
   useEffect(() => { savePerformance(performance) }, [performance])
+  useEffect(() => { saveDeletedKeys(deletedKeys) }, [deletedKeys])
 
   // スプレッドシート自動同期
   const syncFromSheet = useCallback(async (url) => {
@@ -214,7 +216,14 @@ export default function App() {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const rows = await res.json()
-      const mapped = rows.map(mapSheetRow).filter(r => r.companyName)
+      const currentDeletedKeys = loadDeletedKeys()
+      const mapped = rows.map(mapSheetRow).filter(r => {
+        if (!r.companyName) return false
+        // 削除済みの企業はスキップ
+        if (currentDeletedKeys.has(r.companyName)) return false
+        if (r._sheetRowIndex && currentDeletedKeys.has(`row:${r._sheetRowIndex}`)) return false
+        return true
+      })
       setProposals(prev => upsertFromSheet(prev, mapped))
       setSyncStatus({ status: 'ok', time: new Date(), count: mapped.length })
     } catch (e) {
@@ -395,6 +404,16 @@ export default function App() {
             initialFilter={proposalFilter}
             onFilterConsumed={() => setProposalFilter(null)}
             users={users}
+            onDeleteProposals={(deleted) => {
+              setDeletedKeys(prev => {
+                const next = new Set(prev)
+                deleted.forEach(p => {
+                  if (p.companyName) next.add(p.companyName)
+                  if (p._sheetRowIndex) next.add(`row:${p._sheetRowIndex}`)
+                })
+                return next
+              })
+            }}
           />
         )}
         {activeTab === 'reps' && <SalesRepView proposals={proposals} users={users} />}

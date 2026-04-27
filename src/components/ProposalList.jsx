@@ -32,7 +32,7 @@ function exportCsv(proposals) {
   URL.revokeObjectURL(url)
 }
 
-export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, users = [] }) {
+export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, users = [], onDeleteProposals }) {
   const [showPanel, setShowPanel] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -231,6 +231,8 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
   const deleteSelected = () => {
     if (selectedIds.size === 0) return
     if (!confirm(`選択した${selectedIds.size}件を削除しますか？この操作は取り消せません。`)) return
+    const toDelete = proposals.filter(p => selectedIds.has(p.id))
+    onDeleteProposals?.(toDelete)
     setProposals(prev => prev.filter(p => !selectedIds.has(p.id)))
     setSelectedIds(new Set())
   }
