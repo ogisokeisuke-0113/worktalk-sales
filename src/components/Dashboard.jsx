@@ -958,9 +958,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
         {scaleData.length > 0 && (
           <ChartCard title="従業員規模別受注率">
             <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={scaleData} margin={{ right: 10 }}>
+              <BarChart data={scaleData} margin={{ right: 10, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={55} />
                 <YAxis domain={[0, niceMax(scaleData, 'rate')]} ticks={Array.from({ length: niceMax(scaleData, 'rate') / 10 + 1 }, (_, i) => i * 10)} unit="%" tick={{ fontSize: 12 }} />
                 <Tooltip content={<RateTooltipContent />} />
                 <Bar dataKey="rate" name="受注率" fill="#4a82ae"
