@@ -228,6 +228,13 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     setBulkValue('')
   }
 
+  const deleteSelected = () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`選択した${selectedIds.size}件を削除しますか？この操作は取り消せません。`)) return
+    setProposals(prev => prev.filter(p => !selectedIds.has(p.id)))
+    setSelectedIds(new Set())
+  }
+
   const BULK_FIELDS = [
     { key: 'industry', label: '業種', options: INDUSTRIES },
     { key: 'relationship', label: '関係性', options: RELATIONSHIPS },
@@ -389,6 +396,11 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           <button onClick={applyBulkEdit} disabled={!bulkField || !bulkValue}
             className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${bulkField && bulkValue ? 'bg-[#1a5285] text-white hover:bg-[#2d6a9e]' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}>
             適用
+          </button>
+          <div className="w-px h-5 bg-blue-200 mx-1" />
+          <button onClick={deleteSelected}
+            className="px-3 py-1 text-sm font-medium rounded-md bg-red-500 text-white hover:bg-red-600 transition-colors">
+            削除
           </button>
           <button onClick={() => { setSelectedIds(new Set()); setBulkField(''); setBulkValue('') }}
             className="text-sm text-slate-500 hover:text-slate-700 ml-auto">

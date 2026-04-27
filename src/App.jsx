@@ -25,6 +25,7 @@ const SHEET_COL_MAP = {
   '役職': 'position',
   '業種': 'industry',
   '企業規模': 'employeeScale',
+  '従業員規模': 'employeeScale', // 列名の揺れに対応
   '提案状況': 'status',
   '決裁者アポ日': 'decisionMakerDate',
   '結論日': 'conclusionDate',
@@ -32,6 +33,31 @@ const SHEET_COL_MAP = {
   '失注理由': 'lossReason',
   '失注理由詳細': 'lossReasonDetail',
   '備考': 'notes',
+}
+
+// 旧・企業規模区分 → 新7区分へのマイグレーション
+const SCALE_MIGRATION = {
+  '1~50': '1〜30名', '50~100': '31〜100名',
+  '100~200': '101〜300名', '200~300': '101〜300名',
+  '300~400': '301〜500名', '400~500': '301〜500名',
+  '500~600': '501〜1000名', '600~700': '501〜1000名',
+  '700~800': '501〜1000名', '800~900': '501〜1000名', '900~1000': '501〜1000名',
+  '1000~2000': '1001〜3000名', '2000~3000': '1001〜3000名',
+  '3000~4000': '3001名〜', '4000~5000': '3001名〜', '5000~6000': '3001名〜',
+  '6000~7000': '3001名〜', '7000~8000': '3001名〜', '8000~9000': '3001名〜',
+  '9000~10000': '3001名〜', '10000~': '3001名〜',
+}
+
+function migrateEmployeeScale(proposals) {
+  let changed = false
+  const migrated = proposals.map(p => {
+    if (p.employeeScale && SCALE_MIGRATION[p.employeeScale]) {
+      changed = true
+      return { ...p, employeeScale: SCALE_MIGRATION[p.employeeScale] }
+    }
+    return p
+  })
+  return changed ? migrated : proposals
 }
 
 function formatSheetDate(val) {
@@ -168,7 +194,7 @@ export default function App() {
     setProposalFilter(filter)
     setActiveTab('proposals')
   }
-  const [proposals, setProposals] = useState(() => migrateKessaisha(removeInvalidStatuses(migrateIndustry(loadProposals()))))
+  const [proposals, setProposals] = useState(() => migrateEmployeeScale(migrateKessaisha(removeInvalidStatuses(migrateIndustry(loadProposals())))))
   const [teleapoItems, setTeleapoItems] = useState(() => loadTeleapo())
   const [settings, setSettings] = useState(() => loadSettings())
   const [performance, setPerformance] = useState(() => loadPerformance())
