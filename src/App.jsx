@@ -49,12 +49,31 @@ const SCALE_MIGRATION = {
   '9000~10000': '3001名〜', '10000~': '3001名〜',
 }
 
+// 企業規模の表記ゆれを正規化（半角~→全角〜、名なし→名あり）
+function normalizeScale(val) {
+  if (!val) return val
+  const strip = s => s.replace(/~/g, '〜').replace(/名/g, '').replace(/\s/g, '').trim()
+  const normalized = strip(String(val))
+  for (const scale of EMPLOYEE_SCALES) {
+    if (strip(scale) === normalized) return scale
+  }
+  return String(val).trim()
+}
+
 function migrateEmployeeScale(proposals) {
   let changed = false
   const migrated = proposals.map(p => {
-    if (p.employeeScale && SCALE_MIGRATION[p.employeeScale]) {
+    if (!p.employeeScale) return p
+    // 旧21区分マッピング
+    if (SCALE_MIGRATION[p.employeeScale]) {
       changed = true
       return { ...p, employeeScale: SCALE_MIGRATION[p.employeeScale] }
+    }
+    // 表記ゆれ正規化（半角~→全角〜、名なし→名あり）
+    const normalized = normalizeScale(p.employeeScale)
+    if (normalized !== p.employeeScale) {
+      changed = true
+      return { ...p, employeeScale: normalized }
     }
     return p
   })
@@ -71,17 +90,6 @@ function formatSheetDate(val) {
   const d = new Date(s)
   if (!isNaN(d)) return d.toISOString().slice(0, 10)
   return s
-}
-
-// 企業規模の表記ゆれを正規化（半角~→全角〜、名なし→名あり）
-function normalizeScale(val) {
-  if (!val) return val
-  const strip = s => s.replace(/~/g, '〜').replace(/名/g, '').replace(/\s/g, '').trim()
-  const normalized = strip(String(val))
-  for (const scale of EMPLOYEE_SCALES) {
-    if (strip(scale) === normalized) return scale
-  }
-  return String(val).trim()
 }
 
 function mapSheetRow(row) {
