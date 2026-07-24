@@ -1,12 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 
-export default function MultiSelect({
-  options,
-  selected,
-  onChange,
-  placeholder,
-  label,
-}) {
+export default function MultiSelect({ options, selected, onChange, placeholder, label, fullWidth = false }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef(null);
 
@@ -21,11 +15,8 @@ export default function MultiSelect({
   }, []);
 
   const hasSelection = selected.length > 0;
-
   const buttonLabel = hasSelection
-    ? selected.length === 1
-      ? selected[0]
-      : `${selected.length}件選択中`
+    ? selected.length === 1 ? selected[0] : `${selected.length}件選択中`
     : placeholder;
 
   function toggle(option) {
@@ -36,15 +27,49 @@ export default function MultiSelect({
     }
   }
 
-  function clearAll() {
-    onChange([]);
+  if (fullWidth) {
+    return (
+      <div ref={containerRef} className="relative w-full">
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className={`w-full border rounded-lg px-3 py-2.5 text-sm text-left flex items-center justify-between gap-2 transition-colors focus:outline-none focus:ring-2 focus:ring-[#6e9bbf] ${
+            hasSelection
+              ? "border-[#6e9bbf] text-[#2d6a9e] bg-sky-50"
+              : "border-slate-300 text-slate-700 bg-white"
+          }`}
+        >
+          <span className={hasSelection ? "font-medium" : "text-slate-400"}>{buttonLabel}</span>
+          <svg className={`w-4 h-4 flex-shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {open && (
+          <div className="absolute left-0 top-full mt-1 z-50 w-full bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            {hasSelection && (
+              <button type="button" onClick={() => onChange([])}
+                className="w-full text-left px-3 py-2 text-xs text-rose-500 hover:bg-slate-50 border-b border-slate-100">
+                すべて解除
+              </button>
+            )}
+            {options.map((option) => (
+              <label key={option} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+                <input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)}
+                  className="rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf] focus:ring-offset-0 h-3.5 w-3.5" />
+                <span>{option}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   }
 
+  // デフォルト：既存のインラインスタイル（ダッシュボード・提案リスト用）
   return (
     <div ref={containerRef} className="relative inline-block">
-      {label && (
-        <span className="text-xs text-slate-500 mr-1">{label}</span>
-      )}
+      {label && <span className="text-xs text-slate-500 mr-1">{label}</span>}
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
@@ -55,43 +80,23 @@ export default function MultiSelect({
         }`}
       >
         <span>{buttonLabel}</span>
-        <svg
-          className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M19 9l-7 7-7-7"
-          />
+        <svg className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-
       {open && (
         <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-slate-200 rounded-md shadow-lg min-w-[180px] max-h-60 overflow-y-auto">
           {hasSelection && (
-            <button
-              type="button"
-              onClick={clearAll}
-              className="w-full text-left px-3 py-1.5 text-xs text-red-500 hover:bg-slate-50 border-b border-slate-100"
-            >
+            <button type="button" onClick={() => onChange([])}
+              className="w-full text-left px-3 py-1.5 text-xs text-red-500 hover:bg-slate-50 border-b border-slate-100">
               すべて解除
             </button>
           )}
           {options.map((option) => (
-            <label
-              key={option}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(option)}
-                onChange={() => toggle(option)}
-                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 h-3.5 w-3.5"
-              />
+            <label key={option} className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" checked={selected.includes(option)} onChange={() => toggle(option)}
+                className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0 h-3.5 w-3.5" />
               <span>{option}</span>
             </label>
           ))}

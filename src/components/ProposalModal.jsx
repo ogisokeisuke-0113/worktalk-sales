@@ -14,8 +14,6 @@ export default function ProposalSidePanel({ proposal, onSave, onClose, apiKey, s
       setForm({
         ...DEFAULT_PROPOSAL,
         ...proposal,
-        expectedAmount: proposal.expectedAmount || 0,
-        actualAmount: proposal.actualAmount || 0,
         activityLog: proposal.activityLog || [],
       })
     } else {
@@ -254,33 +252,6 @@ JSONのみ出力してください。`
                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     {RELATIONSHIPS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
-                </div>
-              </div>
-
-              {/* Amount Fields */}
-              <div className="bg-sky-50 rounded-lg p-3 space-y-3">
-                <p className="text-xs font-bold text-[#2d6a9e]">金額情報</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4a82ae] mb-1">見込み金額（読み）</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">¥</span>
-                      <input type="number" value={form.expectedAmount || ''} min="0"
-                        onChange={e => set('expectedAmount', Number(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-full border border-blue-200 rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#4a82ae] mb-1">受注金額</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">¥</span>
-                      <input type="number" value={form.actualAmount || ''} min="0"
-                        onChange={e => set('actualAmount', Number(e.target.value) || 0)}
-                        placeholder="0"
-                        className="w-full border border-blue-200 rounded-md pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
-                    </div>
-                  </div>
                 </div>
               </div>
 

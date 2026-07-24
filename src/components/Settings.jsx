@@ -1,5 +1,33 @@
 import { useState } from 'react'
 
+const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+
+function TemplateEditor({ template, onSave, onCancel }) {
+  const [form, setForm] = useState({ ...template })
+  const set = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  return (
+    <div className="space-y-3 bg-slate-50 rounded-lg p-4 border border-slate-200">
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">テンプレート名</label>
+        <input type="text" value={form.name} onChange={e => set('name', e.target.value)} className={INPUT} placeholder="例：アプローチメール" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">件名</label>
+        <input type="text" value={form.subject} onChange={e => set('subject', e.target.value)} className={INPUT} placeholder="例：【WorkTalk】ご挨拶のご連絡" />
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-slate-600 mb-1">本文</label>
+        <textarea value={form.body} onChange={e => set('body', e.target.value)} rows={8} className={INPUT + ' resize-y font-mono text-xs'} placeholder="{{会社名}} 御中&#10;&#10;突然のご連絡失礼いたします..." />
+        <p className="text-[11px] text-slate-400 mt-1">差し込み変数：<code className="bg-slate-100 px-1 rounded">{'{{会社名}}'}</code>　<code className="bg-slate-100 px-1 rounded">{'{{担当者名}}'}</code>　<code className="bg-slate-100 px-1 rounded">{'{{送信者名}}'}</code></p>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <button onClick={onCancel} className="px-3 py-1.5 text-sm text-slate-600 border border-slate-300 rounded-md hover:bg-slate-50">キャンセル</button>
+        <button onClick={() => onSave(form)} disabled={!form.name.trim() || !form.subject.trim()} className="px-3 py-1.5 text-sm text-white bg-[#2d6a9e] rounded-md hover:bg-[#1a5285] disabled:opacity-40">保存</button>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync }) {
   const [newUserName, setNewUserName] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
@@ -10,20 +38,9 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
     setUserError('')
     setUserSuccess('')
     const trimmed = newUserName.trim()
-    if (!trimmed) {
-      setUserError('名前を入力してください')
-      return
-    }
-    if (users.some(u => u.name === trimmed)) {
-      setUserError('この名前は既に登録されています')
-      return
-    }
-    const user = {
-      id: crypto.randomUUID(),
-      name: trimmed,
-      password: newUserPassword || '',
-      createdAt: new Date().toISOString(),
-    }
+    if (!trimmed) { setUserError('名前を入力してください'); return }
+    if (users.some(u => u.name === trimmed)) { setUserError('この名前は既に登録されています'); return }
+    const user = { id: crypto.randomUUID(), name: trimmed, password: newUserPassword || '', createdAt: new Date().toISOString() }
     setUsers(prev => [...prev, user])
     setNewUserName('')
     setNewUserPassword('')
@@ -41,7 +58,6 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
 
   const [urlInput, setUrlInput] = useState(settings.sheetSyncUrl || '')
   const [urlSaved, setUrlSaved] = useState(false)
-
   const handleSaveUrl = () => {
     setSettings(prev => ({ ...prev, sheetSyncUrl: urlInput.trim() }))
     setUrlSaved(true)
@@ -57,6 +73,32 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
   }
   const statusInfo = syncStatusText()
 
+  // メール送信設定
+  const [fromInput, setFromInput] = useState(settings.emailFrom || 'noreply@work-talk.jp')
+  const [senderNameInput, setSenderNameInput] = useState(settings.emailSenderName || 'WorkTalk営業チーム')
+  const [emailSettingSaved, setEmailSettingSaved] = useState(false)
+  const handleSaveEmailSettings = () => {
+    setSettings(prev => ({ ...prev, emailFrom: fromInput.trim(), emailSenderName: senderNameInput.trim() }))
+    setEmailSettingSaved(true)
+    setTimeout(() => setEmailSettingSaved(false), 2000)
+  }
+
+  // テンプレート管理
+  const templates = settings.emailTemplates || []
+  const [editingTemplate, setEditingTemplate] = useState(null) // null | 'new' | { id, name, subject, body }
+  const handleSaveTemplate = (form) => {
+    const isNew = !templates.find(t => t.id === form.id)
+    const updated = isNew
+      ? [...templates, { ...form, id: crypto.randomUUID() }]
+      : templates.map(t => t.id === form.id ? form : t)
+    setSettings(prev => ({ ...prev, emailTemplates: updated }))
+    setEditingTemplate(null)
+  }
+  const handleDeleteTemplate = (id) => {
+    if (!confirm('このテンプレートを削除しますか？')) return
+    setSettings(prev => ({ ...prev, emailTemplates: (prev.emailTemplates || []).filter(t => t.id !== id) }))
+  }
+
   return (
     <div className="max-w-2xl space-y-6">
       <h2 className="text-xl font-bold text-slate-800">設定</h2>
@@ -70,34 +112,19 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
           スプレッドシート連携
         </h3>
         <p className="text-xs text-slate-400 mb-4">Googleスプレッドシートのデータを起動時に自動で読み込みます</p>
-
-        {/* URL input */}
         <div className="space-y-2 mb-4">
           <label className="text-sm font-medium text-slate-600">Apps Script Web App URL</label>
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={urlInput}
-              onChange={e => setUrlInput(e.target.value)}
-              placeholder="https://script.google.com/macros/s/..."
-              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-              onClick={handleSaveUrl}
-              className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors whitespace-nowrap"
-            >
+            <input type="text" value={urlInput} onChange={e => setUrlInput(e.target.value)} placeholder="https://script.google.com/macros/s/..."
+              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button onClick={handleSaveUrl} className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors whitespace-nowrap">
               {urlSaved ? '保存済み ✓' : '保存'}
             </button>
           </div>
         </div>
-
-        {/* Manual sync button */}
         <div className="flex items-center gap-3">
-          <button
-            onClick={onSync}
-            disabled={!settings.sheetSyncUrl || syncStatus?.status === 'loading'}
-            className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-md hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
+          <button onClick={onSync} disabled={!settings.sheetSyncUrl || syncStatus?.status === 'loading'}
+            className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-md hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-2">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
             </svg>
@@ -105,8 +132,6 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
           </button>
           {statusInfo && <span className={`text-sm ${statusInfo.color}`}>{statusInfo.text}</span>}
         </div>
-
-        {/* Setup instructions */}
         <details className="mt-5 text-sm text-slate-500">
           <summary className="cursor-pointer font-medium text-slate-600 hover:text-slate-800">設定手順を見る</summary>
           <ol className="mt-3 space-y-2 list-decimal list-inside text-xs leading-relaxed">
@@ -138,6 +163,76 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
         </details>
       </div>
 
+      {/* メール送信設定 */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-base font-semibold text-slate-700 mb-4 flex items-center gap-2">
+          <svg className="w-5 h-5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
+          </svg>
+          メール送信設定
+        </h3>
+
+        {/* 送信元設定 */}
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">送信元メールアドレス</label>
+            <input type="email" value={fromInput} onChange={e => setFromInput(e.target.value)} className={INPUT} placeholder="noreply@work-talk.jp" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">送信者名</label>
+            <input type="text" value={senderNameInput} onChange={e => setSenderNameInput(e.target.value)} className={INPUT} placeholder="WorkTalk営業チーム" />
+          </div>
+        </div>
+        <div className="flex justify-end mb-6">
+          <button onClick={handleSaveEmailSettings} className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors">
+            {emailSettingSaved ? '保存済み ✓' : '保存'}
+          </button>
+        </div>
+
+        {/* テンプレート一覧 */}
+        <div className="border-t border-slate-100 pt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-slate-700">メールテンプレート</h4>
+            {editingTemplate === null && (
+              <button onClick={() => setEditingTemplate({ id: '', name: '', subject: '', body: '' })}
+                className="px-3 py-1.5 text-xs text-[#2d6a9e] border border-[#2d6a9e] rounded-md hover:bg-sky-50 transition-colors flex items-center gap-1">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                新規追加
+              </button>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {templates.map(t => (
+              <div key={t.id}>
+                {editingTemplate?.id === t.id ? (
+                  <TemplateEditor template={editingTemplate} onSave={handleSaveTemplate} onCancel={() => setEditingTemplate(null)} />
+                ) : (
+                  <div className="flex items-start justify-between py-3 px-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-700">{t.name}</p>
+                      <p className="text-xs text-slate-400 truncate mt-0.5">{t.subject}</p>
+                    </div>
+                    <div className="flex gap-2 ml-3 flex-shrink-0">
+                      <button onClick={() => setEditingTemplate(t)} className="text-xs text-[#4a82ae] hover:text-[#2d6a9e]">編集</button>
+                      <button onClick={() => handleDeleteTemplate(t.id)} className="text-xs text-red-400 hover:text-red-600">削除</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+            {templates.length === 0 && editingTemplate === null && (
+              <p className="text-sm text-slate-400 text-center py-4">テンプレートがありません</p>
+            )}
+            {editingTemplate !== null && editingTemplate.id === '' && (
+              <TemplateEditor template={editingTemplate} onSave={handleSaveTemplate} onCancel={() => setEditingTemplate(null)} />
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* User Management */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-base font-semibold text-slate-700 mb-4 flex items-center gap-2">
@@ -146,8 +241,6 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
           </svg>
           ユーザー管理
         </h3>
-
-        {/* User list */}
         <div className="space-y-2 mb-4">
           {users.map(u => (
             <div key={u.id} className="flex items-center justify-between py-2 px-3 bg-slate-50 rounded-lg">
@@ -163,47 +256,24 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
                 </div>
               </div>
               {u.id !== currentUser?.id && (
-                <button
-                  onClick={() => handleDeleteUser(u.id)}
-                  className="text-xs text-red-400 hover:text-red-600 transition-colors"
-                >
-                  削除
-                </button>
+                <button onClick={() => handleDeleteUser(u.id)} className="text-xs text-red-400 hover:text-red-600 transition-colors">削除</button>
               )}
             </div>
           ))}
         </div>
-
-        {/* Add new user */}
         <div className="border-t border-slate-100 pt-4">
           <p className="text-sm font-medium text-slate-600 mb-2">ユーザーを追加</p>
           <div className="flex gap-2">
-            <input
-              type="text"
-              value={newUserName}
-              onChange={e => setNewUserName(e.target.value)}
-              placeholder="名前"
-              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <input
-              type="password"
-              value={newUserPassword}
-              onChange={e => setNewUserPassword(e.target.value)}
-              placeholder="パスワード（任意）"
-              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-            <button
-              onClick={handleAddUser}
-              className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors whitespace-nowrap"
-            >
-              追加
-            </button>
+            <input type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="名前"
+              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+            <input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="パスワード（任意）"
+              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+            <button onClick={handleAddUser} className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors whitespace-nowrap">追加</button>
           </div>
           {userError && <p className="text-sm text-red-500 mt-2">{userError}</p>}
           {userSuccess && <p className="text-sm text-green-600 mt-2">{userSuccess}</p>}
         </div>
       </div>
-
     </div>
   )
 }

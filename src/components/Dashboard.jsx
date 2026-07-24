@@ -9,6 +9,12 @@ import { FUNNEL_COLORS, EMPLOYEE_SCALES } from '../constants'
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
+const HEATMAP_KEYS = {
+  industry_relationship: { row: 'industry', col: 'relationship' },
+  industry_scale: { row: 'industry', col: 'employeeScale' },
+  relationship_scale: { row: 'relationship', col: 'employeeScale' },
+}
+
 // ネイビー濃淡パレット（薄→濃）— 率や進行度に応じて濃くなる
 const NAVY_SCALE = ['#dbe6f0', '#b8cfe0', '#93b5d0', '#6e9bbf', '#4a82ae', '#2d6a9e', '#1a5285']
 
@@ -41,14 +47,17 @@ function wilsonLower(won, total) {
 
 // クリック可能なバーのカスタムShape
 function ClickableBar({ x, y, width, height, fill, radius, onClick }) {
+  const [hovered, setHovered] = useState(false)
   const r = radius || [0, 0, 0, 0]
   return (
     <rect
       x={x} y={y} width={width} height={height}
       fill={fill}
       rx={r[0] || 0}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: 'pointer', opacity: hovered ? 0.65 : 1, transition: 'opacity 0.12s ease' }}
       onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     />
   )
 }
@@ -82,13 +91,6 @@ function RevisitCrossTooltip({ active, payload }) {
   )
 }
 
-function formatYen(amount) {
-  if (!amount) return '¥0'
-  if (amount >= 100000000) return `¥${(amount / 100000000).toFixed(1)}億`
-  if (amount >= 10000) return `¥${(amount / 10000).toFixed(amount % 10000 === 0 ? 0 : 1)}万`
-  return `¥${amount.toLocaleString()}`
-}
-
 // テレアポ分析用ツールチップ
 function TeleapoTooltipContent({ active, payload }) {
   if (!active || !payload || !payload.length) return null
@@ -104,7 +106,7 @@ function TeleapoTooltipContent({ active, payload }) {
   )
 }
 
-export default function Dashboard({ proposals, teleapoItems = [], onNavigate, users = [] }) {
+export default function Dashboard({ proposals, teleapoItems = [], onNavigate, onNavigateTeleapo, users = [] }) {
   const [dashboardMode, setDashboardMode] = useState('proposals') // 'proposals' | 'teleapo'
   const [selectedRep, setSelectedRep] = useState([])
   const [selectedIndustry, setSelectedIndustry] = useState([])
@@ -125,6 +127,14 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
         dateTo,
         decisionMaker: decisionMakerFilter,
       },
+    })
+  }
+
+  // テレアポリストへのナビゲーション（担当フィルターを引き継ぐ）
+  const navigateTeleapoWithFilters = (extra = {}) => {
+    onNavigateTeleapo?.({
+      ...extra,
+      _teleapoRepFilter: teleapoRepFilter,
     })
   }
 
@@ -169,15 +179,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
     const lost = filtered.filter(p => p.status === '失注').length
     const winRate = proposals > 0 ? ((won / proposals) * 100).toFixed(1) : 0
 
-    const nonAppo = filtered.filter(p => p.status !== 'アポ確定')
-    const expectedTotal = nonAppo.reduce((s, p) => s + (p.expectedAmount || 0), 0)
-    const actualTotal = nonAppo.filter(p => wonStatuses.includes(p.status))
-      .reduce((s, p) => s + (p.actualAmount || 0), 0)
-    const pipelineAmount = nonAppo
-      .filter(p => ['担当者合意', '決裁者アポ調整中'].includes(p.status))
-      .reduce((s, p) => s + (p.expectedAmount || 0), 0)
-
-    return { total: proposals, won, winRate, appoConfirmed, inProgress, lost, expectedTotal, actualTotal, pipelineAmount }
+    return { total: proposals, won, winRate, appoConfirmed, inProgress, lost }
   }, [filtered])
 
   const monthlyData = useMemo(() => {
@@ -192,7 +194,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
       map[month].denominator++
       if (wonStatuses.includes(p.status)) {
         map[month].won++
-        map[month].amount += (p.actualAmount || 0)
       }
     })
 
@@ -213,7 +214,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
       return {
         name: status,
         count: items.length,
-        amount: items.reduce((s, p) => s + (p.expectedAmount || 0), 0),
       }
     }).filter(d => d.count > 0)
   }, [filtered])
@@ -443,15 +443,14 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
       map[name].denominator++
       if (wonStatuses.includes(p.status)) {
         map[name].won++
-        map[name].actual += (p.actualAmount || 0)
       }
-      map[name].expected += (p.expectedAmount || 0)
     })
 
     return Object.values(map)
       .map(r => ({ ...r, winRate: r.denominator > 0 ? Number(((r.won / r.denominator) * 100).toFixed(1)) : 0 }))
       .sort((a, b) => b.total - a.total)
   }, [filtered])
+
 
   // ──── テレアポ分析データ ────
   const teleapoSalesReps = useMemo(() => {
@@ -462,28 +461,101 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
   }, [teleapoItems, proposals, users])
 
   const [teleapoRepFilter, setTeleapoRepFilter] = useState([])
+  const [teleapoIndustryFilter, setTeleapoIndustryFilter] = useState([])
+  const [teleapoDateFrom, setTeleapoDateFrom] = useState('')
+  const [teleapoDateTo, setTeleapoDateTo] = useState('')
+
+  const [emailIndustryFilter, setEmailIndustryFilter] = useState([])
+  const [emailDateFrom, setEmailDateFrom] = useState('')
+  const [emailDateTo, setEmailDateTo] = useState('')
 
   const teleapoFiltered = useMemo(() => {
     if (!teleapoRepFilter.length) return teleapoItems
     return teleapoItems.filter(i => teleapoRepFilter.includes(i.salesRep))
   }, [teleapoItems, teleapoRepFilter])
 
+  const allIndustries = useMemo(() => {
+    const set = new Set()
+    teleapoItems.forEach(i => { if (i.industry) set.add(i.industry) })
+    return [...set].sort()
+  }, [teleapoItems])
+
+  const emailFiltered = useMemo(() => {
+    return teleapoItems.filter(item => {
+      if (emailIndustryFilter.length > 0 && !emailIndustryFilter.includes(item.industry || '(未設定)')) return false
+      if (emailDateFrom || emailDateTo) {
+        const sentAt = item.emailSentAt ? item.emailSentAt.slice(0, 10) : null
+        if (!sentAt) return false
+        if (emailDateFrom && sentAt < emailDateFrom) return false
+        if (emailDateTo && sentAt > emailDateTo) return false
+      }
+      return true
+    })
+  }, [teleapoItems, emailIndustryFilter, emailDateFrom, emailDateTo])
+
+  // 架電日時で絞り込んだ版（callHistoryのみフィルタ、企業リストは全件）
+  const teleapoCallFiltered = useMemo(() => {
+    if (!teleapoDateFrom && !teleapoDateTo) return teleapoFiltered
+    return teleapoFiltered.map(item => ({
+      ...item,
+      callHistory: (item.callHistory || []).filter(c => {
+        if (!c.date) return false
+        const day = c.date.slice(0, 10)
+        if (teleapoDateFrom && day < teleapoDateFrom) return false
+        if (teleapoDateTo && day > teleapoDateTo) return false
+        return true
+      }),
+    }))
+  }, [teleapoFiltered, teleapoDateFrom, teleapoDateTo])
+
   const teleapoStats = useMemo(() => {
-    const items = teleapoFiltered
-    const total = items.length
-    const allCalls = items.flatMap(i => i.callHistory || [])
+    const total = teleapoFiltered.length
+    const allCalls = teleapoCallFiltered.flatMap(i => i.callHistory || [])
     const totalCalls = allCalls.length
-    const appoGot = allCalls.filter(c => c.result === 'アポ獲得').length
-    const appoRate = totalCalls > 0 ? ((appoGot / totalCalls) * 100).toFixed(1) : 0
-    const kept = items.filter(i => i.isKept).length
-    const called = items.filter(i => (i.callHistory || []).length > 0).length
+    const kept = teleapoFiltered.filter(i => i.isKept).length
+    const called = teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).length
     const uncalled = total - called
-    const appoConfirmed = items.filter(i => i.status === 'アポ確定').length
-    return { total, totalCalls, appoGot, appoRate: Number(appoRate), kept, called, uncalled, appoConfirmed }
-  }, [teleapoFiltered])
+    const appoConfirmed = teleapoFiltered.filter(i => i.status === 'アポ確定').length
+    const totalKeeps = teleapoFiltered.reduce((s, i) => s + (i.keepHistory || []).length, 0)
+    const connected = allCalls.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+    const connectionRate = totalCalls > 0 ? Number(((connected / totalCalls) * 100).toFixed(1)) : 0
+    const digestRate = total > 0 ? Number(((called / total) * 100).toFixed(1)) : 0
+    const appoRate = called > 0 ? Number(((appoConfirmed / called) * 100).toFixed(1)) : 0
+    return { total, totalCalls, kept, called, uncalled, appoConfirmed, totalKeeps, connectionRate, digestRate, appoRate }
+  }, [teleapoFiltered, teleapoCallFiltered])
+
+  // ファネル（登録 → 架電済 → アポ確定）
+  const teleapoFunnel = useMemo(() => {
+    const total = teleapoFiltered.length
+    const called = teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).length
+    const appo = teleapoFiltered.filter(i => i.status === 'アポ確定').length
+    return [
+      { label: '登録企業', value: total, rate: null },
+      { label: '架電済', value: called, rate: total > 0 ? Number(((called / total) * 100).toFixed(1)) : 0 },
+      { label: 'アポ確定', value: appo, rate: called > 0 ? Number(((appo / called) * 100).toFixed(1)) : 0 },
+    ]
+  }, [teleapoFiltered, teleapoCallFiltered])
+
+  // 週別架電推移（結果別積み上げ）
+  const teleapoWeekly = useMemo(() => {
+    const allCalls = teleapoCallFiltered.flatMap(i => i.callHistory || [])
+    const map = {}
+    allCalls.forEach(c => {
+      if (!c.date) return
+      const d = new Date(c.date)
+      const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+      const key = mon.toISOString().slice(0, 10)
+      const label = `${mon.getMonth() + 1}/${mon.getDate()}`
+      if (!map[key]) map[key] = { week: key, label, total: 0 }
+      const r = c.result || '不明'
+      map[key][r] = (map[key][r] || 0) + 1
+      map[key].total++
+    })
+    return Object.values(map).sort((a, b) => a.week.localeCompare(b.week)).slice(-16)
+  }, [teleapoCallFiltered])
 
   const teleapoResultDist = useMemo(() => {
-    const allCalls = teleapoFiltered.flatMap(i => i.callHistory || [])
+    const allCalls = teleapoCallFiltered.flatMap(i => i.callHistory || [])
     const map = {}
     allCalls.forEach(c => {
       if (c.result) map[c.result] = (map[c.result] || 0) + 1
@@ -491,72 +563,428 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
     return Object.entries(map)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
-  }, [teleapoFiltered])
+  }, [teleapoCallFiltered])
 
   const teleapoByIndustry = useMemo(() => {
     const map = {}
-    teleapoFiltered.forEach(item => {
+    // 母数は架電済み企業のみ
+    teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).forEach(item => {
       const key = item.industry || '(未設定)'
-      if (!map[key]) map[key] = { name: key, calls: 0, appo: 0, companies: 0 }
+      if (teleapoIndustryFilter.length > 0 && !teleapoIndustryFilter.includes(key)) return
+      if (!map[key]) map[key] = { name: key, calls: 0, appo: 0, companies: 0, connected: 0 }
       map[key].companies++
       const history = item.callHistory || []
       map[key].calls += history.length
-      map[key].appo += history.filter(c => c.result === 'アポ獲得').length
+      map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+    })
+    teleapoFiltered.filter(i => i.status === 'アポ確定').forEach(item => {
+      const key = item.industry || '(未設定)'
+      if (teleapoIndustryFilter.length > 0 && !teleapoIndustryFilter.includes(key)) return
+      if (map[key]) map[key].appo++
     })
     return Object.values(map)
-      .map(d => ({ ...d, appoRate: d.calls > 0 ? Number(((d.appo / d.calls) * 100).toFixed(1)) : 0 }))
-      .filter(d => d.calls > 0)
-      .sort((a, b) => b.appoRate - a.appoRate)
-  }, [teleapoFiltered])
+      .map(d => ({
+        ...d,
+        appoRate: d.companies > 0 ? Number(((d.appo / d.companies) * 100).toFixed(1)) : 0,
+        connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.companies - a.companies)
+  }, [teleapoCallFiltered, teleapoFiltered, teleapoIndustryFilter])
 
   const teleapoByScale = useMemo(() => {
     const map = {}
-    teleapoFiltered.forEach(item => {
+    // 母数は架電済み企業のみ
+    teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).forEach(item => {
       const key = item.employeeScale || '(未設定)'
-      if (!map[key]) map[key] = { name: key, calls: 0, appo: 0, companies: 0 }
+      if (!map[key]) map[key] = { name: key, calls: 0, appo: 0, companies: 0, connected: 0 }
       map[key].companies++
       const history = item.callHistory || []
       map[key].calls += history.length
-      map[key].appo += history.filter(c => c.result === 'アポ獲得').length
+      map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+    })
+    teleapoFiltered.filter(i => i.status === 'アポ確定').forEach(item => {
+      const key = item.employeeScale || '(未設定)'
+      if (map[key]) map[key].appo++
     })
     return Object.values(map)
-      .map(d => ({ ...d, appoRate: d.calls > 0 ? Number(((d.appo / d.calls) * 100).toFixed(1)) : 0 }))
-      .filter(d => d.calls > 0)
+      .map(d => ({
+        ...d,
+        appoRate: d.companies > 0 ? Number(((d.appo / d.companies) * 100).toFixed(1)) : 0,
+        connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0,
+      }))
       .sort((a, b) => {
         const numA = parseInt(a.name) || 9999
         const numB = parseInt(b.name) || 9999
         return numA - numB
       })
-  }, [teleapoFiltered])
+  }, [teleapoCallFiltered, teleapoFiltered])
 
   const teleapoByRep = useMemo(() => {
     const map = {}
-    teleapoFiltered.forEach(item => {
+    // 架電済み企業のみ担当別集計（母数を統一）
+    teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).forEach(item => {
       const key = item.salesRep || '(未設定)'
-      if (!map[key]) map[key] = { name: key, calls: 0, appo: 0, companies: 0 }
+      if (!map[key]) map[key] = { name: key, calls: 0, companies: 0, keeps: 0, connected: 0, appoConfirmed: 0 }
       map[key].companies++
       const history = item.callHistory || []
       map[key].calls += history.length
-      map[key].appo += history.filter(c => c.result === 'アポ獲得').length
+      map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+    })
+    teleapoFiltered.forEach(item => {
+      ;(item.keepHistory || []).forEach(k => {
+        const key = k.by || '(未設定)'
+        if (!map[key]) map[key] = { name: key, calls: 0, companies: 0, keeps: 0, connected: 0, heard: 0, appoConfirmed: 0 }
+        map[key].keeps++
+      })
+      if (item.status === 'アポ確定') {
+        const key = item.salesRep || '(未設定)'
+        if (map[key]) map[key].appoConfirmed++
+      }
     })
     return Object.values(map)
-      .map(d => ({ ...d, appoRate: d.calls > 0 ? Number(((d.appo / d.calls) * 100).toFixed(1)) : 0 }))
-      .filter(d => d.calls > 0)
+      .map(d => ({
+        ...d,
+        connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0,
+        appoRate: d.companies > 0 ? Number(((d.appoConfirmed / d.companies) * 100).toFixed(1)) : 0,
+        avgCalls: d.companies > 0 ? Number((d.calls / d.companies).toFixed(1)) : 0,
+      }))
+      .filter(d => d.calls > 0 || d.keeps > 0)
       .sort((a, b) => b.calls - a.calls)
-  }, [teleapoFiltered])
+  }, [teleapoCallFiltered, teleapoFiltered])
 
   const teleapoDaily = useMemo(() => {
-    const allCalls = teleapoFiltered.flatMap(i => (i.callHistory || []).map(c => ({ ...c, salesRep: i.salesRep })))
+    const allCalls = teleapoCallFiltered.flatMap(i => i.callHistory || [])
     const map = {}
     allCalls.forEach(c => {
       if (!c.date) return
       const day = c.date.slice(0, 10)
-      if (!map[day]) map[day] = { date: day, calls: 0, appo: 0 }
+      if (!map[day]) map[day] = { date: day, calls: 0 }
       map[day].calls++
-      if (c.result === 'アポ獲得') map[day].appo++
     })
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date)).slice(-30)
+  }, [teleapoCallFiltered])
+
+  // 未架電企業の内訳（全期間）
+  const teleapoUncalled = useMemo(() => {
+    const items = teleapoFiltered.filter(i => (i.callHistory || []).length === 0)
+    const byIndustry = {}
+    const byScale = {}
+    items.forEach(i => {
+      const ind = i.industry || '(未設定)'
+      byIndustry[ind] = (byIndustry[ind] || 0) + 1
+      const sc = i.employeeScale || '(未設定)'
+      byScale[sc] = (byScale[sc] || 0) + 1
+    })
+    return {
+      total: items.length,
+      byIndustry: Object.entries(byIndustry).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 8),
+      byScale: Object.entries(byScale).map(([name, value]) => ({ name, value })).sort((a, b) => {
+        const numA = parseInt(a.name) || 9999
+        const numB = parseInt(b.name) || 9999
+        return numA - numB
+      }),
+    }
   }, [teleapoFiltered])
+
+  // 業種 × 規模 クロス集計（架電済み企業のみ）
+  const teleapoCrossTab = useMemo(() => {
+    const map = {}
+    const indSet = new Set()
+    const scSet = new Set()
+
+    teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).forEach(item => {
+      const ind = item.industry || '(未設定)'
+      if (teleapoIndustryFilter.length > 0 && !teleapoIndustryFilter.includes(ind)) return
+      const sc = item.employeeScale || '(未設定)'
+      indSet.add(ind); scSet.add(sc)
+      if (!map[ind]) map[ind] = {}
+      if (!map[ind][sc]) map[ind][sc] = { calls: 0, connected: 0, appo: 0, companies: 0 }
+      const history = item.callHistory || []
+      map[ind][sc].companies++
+      map[ind][sc].calls += history.length
+      map[ind][sc].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+    })
+    teleapoFiltered.filter(i => i.status === 'アポ確定').forEach(item => {
+      const ind = item.industry || '(未設定)'
+      if (teleapoIndustryFilter.length > 0 && !teleapoIndustryFilter.includes(ind)) return
+      const sc = item.employeeScale || '(未設定)'
+      if (map[ind]?.[sc]) map[ind][sc].appo++
+    })
+
+    // 業種：架電社数の多い順
+    const industries = [...indSet].sort((a, b) => {
+      const tA = Object.values(map[a] || {}).reduce((s, c) => s + c.companies, 0)
+      const tB = Object.values(map[b] || {}).reduce((s, c) => s + c.companies, 0)
+      return tB - tA
+    })
+    // 規模：EMPLOYEE_SCALES の定義順
+    const scales = EMPLOYEE_SCALES.filter(s => scSet.has(s))
+    ;[...scSet].filter(s => !EMPLOYEE_SCALES.includes(s)).forEach(s => scales.push(s))
+
+    return { map, industries, scales }
+  }, [teleapoCallFiltered, teleapoFiltered, teleapoIndustryFilter])
+
+  // Keep転換統計
+  const teleapoKeepStats = useMemo(() => {
+    const everKept = teleapoFiltered.filter(i => (i.keepHistory || []).length > 0)
+    const appoFromKept = everKept.filter(i => i.status === 'アポ確定').length
+    const keepConvRate = everKept.length > 0 ? Number(((appoFromKept / everKept.length) * 100).toFixed(1)) : 0
+    return { everKept: everKept.length, appoFromKept, keepConvRate }
+  }, [teleapoFiltered])
+
+  // メール分析統計
+  const emailStats = useMemo(() => {
+    const items = emailFiltered
+    const total = items.length
+    const withEmail = items.filter(i => i.email && i.email.includes('@')).length
+    const sent = items.filter(i => ['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus)).length
+    const opened = items.filter(i => ['開封済み', 'クリック済み'].includes(i.emailStatus)).length
+    const clicked = items.filter(i => i.emailStatus === 'クリック済み').length
+    const unsent = items.filter(i => !i.emailStatus || i.emailStatus === '未送信').length
+    const openRate = sent > 0 ? Number(((opened / sent) * 100).toFixed(1)) : 0
+    const clickRate = sent > 0 ? Number(((clicked / sent) * 100).toFixed(1)) : 0
+    const sentRate = withEmail > 0 ? Number(((sent / withEmail) * 100).toFixed(1)) : 0
+    const statusBreakdown = [
+      { name: '未送信', count: unsent, color: '#94a3b8' },
+      { name: '送信済み', count: sent - opened, color: '#60a5fa' },
+      { name: '開封済み', count: opened - clicked, color: '#f59e0b' },
+      { name: 'クリック済み', count: clicked, color: '#10b981' },
+    ].filter(d => d.count > 0)
+    return { total, withEmail, sent, opened, clicked, unsent, openRate, clickRate, sentRate, statusBreakdown }
+  }, [emailFiltered])
+
+  // メール × 業種別（emailFiltered使用）
+  const emailByIndustry = useMemo(() => {
+    const map = {}
+    emailFiltered.forEach(item => {
+      const key = item.industry || '(未設定)'
+      if (!map[key]) map[key] = { name: key, total: 0, hasEmail: 0, sent: 0, opened: 0, clicked: 0 }
+      map[key].total++
+      if (item.email && item.email.includes('@')) map[key].hasEmail++
+      if (['送信済み', '開封済み', 'クリック済み'].includes(item.emailStatus)) map[key].sent++
+      if (['開封済み', 'クリック済み'].includes(item.emailStatus)) map[key].opened++
+      if (item.emailStatus === 'クリック済み') map[key].clicked++
+    })
+    return Object.values(map)
+      .map(d => ({
+        ...d,
+        coverageRate: d.total > 0 ? Number(((d.hasEmail / d.total) * 100).toFixed(1)) : 0,
+        sentRate: d.hasEmail > 0 ? Number(((d.sent / d.hasEmail) * 100).toFixed(1)) : 0,
+        openRate: d.sent > 0 ? Number(((d.opened / d.sent) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.total - a.total)
+  }, [emailFiltered])
+
+  // メール × 規模別（emailFiltered使用）
+  const emailByScale = useMemo(() => {
+    const map = {}
+    emailFiltered.forEach(item => {
+      const key = item.employeeScale || '(未設定)'
+      if (!map[key]) map[key] = { name: key, total: 0, hasEmail: 0, sent: 0, opened: 0, clicked: 0 }
+      map[key].total++
+      if (item.email && item.email.includes('@')) map[key].hasEmail++
+      if (['送信済み', '開封済み', 'クリック済み'].includes(item.emailStatus)) map[key].sent++
+      if (['開封済み', 'クリック済み'].includes(item.emailStatus)) map[key].opened++
+      if (item.emailStatus === 'クリック済み') map[key].clicked++
+    })
+    return Object.values(map)
+      .map(d => ({
+        ...d,
+        coverageRate: d.total > 0 ? Number(((d.hasEmail / d.total) * 100).toFixed(1)) : 0,
+        sentRate: d.hasEmail > 0 ? Number(((d.sent / d.hasEmail) * 100).toFixed(1)) : 0,
+        openRate: d.sent > 0 ? Number(((d.opened / d.sent) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => {
+        const numA = parseInt(a.name) || 9999
+        const numB = parseInt(b.name) || 9999
+        return numA - numB
+      })
+  }, [emailFiltered])
+
+  // メール × テンプレート別（emailFiltered使用）
+  const emailByTemplate = useMemo(() => {
+    const map = {}
+    emailFiltered.forEach(item => {
+      if (!['送信済み', '開封済み', 'クリック済み'].includes(item.emailStatus)) return
+      const key = item.emailTemplateName || '(テンプレ不明)'
+      if (!map[key]) map[key] = { name: key, sent: 0, opened: 0, clicked: 0 }
+      map[key].sent++
+      if (['開封済み', 'クリック済み'].includes(item.emailStatus)) map[key].opened++
+      if (item.emailStatus === 'クリック済み') map[key].clicked++
+    })
+    return Object.values(map)
+      .map(d => ({
+        ...d,
+        openRate: d.sent > 0 ? Number(((d.opened / d.sent) * 100).toFixed(1)) : 0,
+        clickRate: d.sent > 0 ? Number(((d.clicked / d.sent) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.sent - a.sent)
+  }, [emailFiltered])
+
+  // メール送信タイミング別（曜日）（emailFiltered使用）
+  const DAY_NAMES_EMAIL = ['日', '月', '火', '水', '木', '金', '土']
+  const emailByDayOfWeek = useMemo(() => {
+    const map = DAY_NAMES_EMAIL.map((d, i) => ({ name: d + '曜', dayIndex: i, sent: 0, opened: 0 }))
+    emailFiltered.forEach(item => {
+      if (!item.emailSentAt) return
+      const day = new Date(item.emailSentAt).getDay()
+      map[day].sent++
+      if (['開封済み', 'クリック済み'].includes(item.emailStatus)) map[day].opened++
+    })
+    return map.map(d => ({
+      ...d,
+      openRate: d.sent > 0 ? Number(((d.opened / d.sent) * 100).toFixed(1)) : 0,
+    }))
+  }, [emailFiltered])
+
+  // メール送信タイミング別（時間帯）（emailFiltered使用）
+  const emailByHour = useMemo(() => {
+    const map = Array.from({ length: 24 }, (_, h) => ({ name: `${h}時`, hour: h, sent: 0, opened: 0 }))
+    emailFiltered.forEach(item => {
+      if (!item.emailSentAt) return
+      const hour = new Date(item.emailSentAt).getHours()
+      map[hour].sent++
+      if (['開封済み', 'クリック済み'].includes(item.emailStatus)) map[hour].opened++
+    })
+    return map
+      .filter(d => d.sent > 0)
+      .map(d => ({ ...d, openRate: d.sent > 0 ? Number(((d.opened / d.sent) * 100).toFixed(1)) : 0 }))
+  }, [emailFiltered])
+
+  // メールあり/なし別アポ率（テレアポタブ用：teleapoFiltered）
+  const emailAppoCorr = useMemo(() => {
+    const withMail = teleapoFiltered.filter(i => ['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
+    const withoutMail = teleapoFiltered.filter(i => !['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
+    return [
+      { name: 'メール送信あり', companies: withMail.length, appo: withMail.filter(i => i.status === 'アポ確定').length,
+        appoRate: withMail.length > 0 ? Number(((withMail.filter(i => i.status === 'アポ確定').length / withMail.length) * 100).toFixed(1)) : 0 },
+      { name: 'メール送信なし', companies: withoutMail.length, appo: withoutMail.filter(i => i.status === 'アポ確定').length,
+        appoRate: withoutMail.length > 0 ? Number(((withoutMail.filter(i => i.status === 'アポ確定').length / withoutMail.length) * 100).toFixed(1)) : 0 },
+    ]
+  }, [teleapoFiltered])
+
+  // メール送信〜架電 経過日数別アポ率（テレアポタブ用：teleapoFiltered）
+  const emailLagAppo = useMemo(() => {
+    const buckets = [
+      { label: '当日', min: 0, max: 0, companies: 0, appo: 0 },
+      { label: '1日後', min: 1, max: 1, companies: 0, appo: 0 },
+      { label: '2〜3日後', min: 2, max: 3, companies: 0, appo: 0 },
+      { label: '4〜7日後', min: 4, max: 7, companies: 0, appo: 0 },
+      { label: '8日以上後', min: 8, max: Infinity, companies: 0, appo: 0 },
+    ]
+    teleapoFiltered.forEach(item => {
+      if (!item.emailSentAt || !(item.callHistory || []).length) return
+      const sentDate = new Date(item.emailSentAt)
+      const firstCallDate = new Date(item.callHistory[0].date)
+      const lagDays = Math.max(0, Math.floor((firstCallDate - sentDate) / (1000 * 60 * 60 * 24)))
+      const bucket = buckets.find(b => lagDays >= b.min && lagDays <= b.max)
+      if (bucket) { bucket.companies++; if (item.status === 'アポ確定') bucket.appo++ }
+    })
+    return buckets.filter(b => b.companies > 0).map(b => ({ ...b, appoRate: Number(((b.appo / b.companies) * 100).toFixed(1)) }))
+  }, [teleapoFiltered])
+
+  // メールあり/なし別アポ率（メール分析タブ用：emailFiltered）
+  const emailAppoCorrF = useMemo(() => {
+    const withMail = emailFiltered.filter(i => ['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
+    const withoutMail = emailFiltered.filter(i => !['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
+    return [
+      { name: 'メール送信あり', companies: withMail.length, appo: withMail.filter(i => i.status === 'アポ確定').length,
+        appoRate: withMail.length > 0 ? Number(((withMail.filter(i => i.status === 'アポ確定').length / withMail.length) * 100).toFixed(1)) : 0 },
+      { name: 'メール送信なし', companies: withoutMail.length, appo: withoutMail.filter(i => i.status === 'アポ確定').length,
+        appoRate: withoutMail.length > 0 ? Number(((withoutMail.filter(i => i.status === 'アポ確定').length / withoutMail.length) * 100).toFixed(1)) : 0 },
+    ]
+  }, [emailFiltered])
+
+  // メール送信〜架電 経過日数別アポ率（メール分析タブ用：emailFiltered）
+  const emailLagAppoF = useMemo(() => {
+    const buckets = [
+      { label: '当日', min: 0, max: 0, companies: 0, appo: 0 },
+      { label: '1日後', min: 1, max: 1, companies: 0, appo: 0 },
+      { label: '2〜3日後', min: 2, max: 3, companies: 0, appo: 0 },
+      { label: '4〜7日後', min: 4, max: 7, companies: 0, appo: 0 },
+      { label: '8日以上後', min: 8, max: Infinity, companies: 0, appo: 0 },
+    ]
+    emailFiltered.forEach(item => {
+      if (!item.emailSentAt || !(item.callHistory || []).length) return
+      const sentDate = new Date(item.emailSentAt)
+      const firstCallDate = new Date(item.callHistory[0].date)
+      const lagDays = Math.max(0, Math.floor((firstCallDate - sentDate) / (1000 * 60 * 60 * 24)))
+      const bucket = buckets.find(b => lagDays >= b.min && lagDays <= b.max)
+      if (bucket) { bucket.companies++; if (item.status === 'アポ確定') bucket.appo++ }
+    })
+    return buckets.filter(b => b.companies > 0).map(b => ({ ...b, appoRate: Number(((b.appo / b.companies) * 100).toFixed(1)) }))
+  }, [emailFiltered])
+
+  // 開封状態別 接続率・アポ率（メール分析タブ用：emailFiltered）
+  const emailOpenAppoCorr = useMemo(() => {
+    const groups = [
+      { label: '開封済み', items: emailFiltered.filter(i => ['開封済み', 'クリック済み'].includes(i.emailStatus)) },
+      { label: '送信済み(未開封)', items: emailFiltered.filter(i => i.emailStatus === '送信済み') },
+      { label: 'メール未送信', items: emailFiltered.filter(i => !['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus)) },
+    ]
+    return groups.map(g => {
+      const called = g.items.filter(i => (i.callHistory || []).length > 0)
+      const connected = called.filter(i => (i.callHistory || []).some(c => !['不在', '受付ブロック'].includes(c.result)))
+      const appo = g.items.filter(i => i.status === 'アポ確定')
+      return {
+        name: g.label,
+        total: g.items.length,
+        connectionRate: called.length > 0 ? Number(((connected.length / called.length) * 100).toFixed(1)) : 0,
+        appoRate: g.items.length > 0 ? Number(((appo.length / g.items.length) * 100).toFixed(1)) : 0,
+      }
+    }).filter(g => g.total > 0)
+  }, [emailFiltered])
+
+  const DAY_NAMES_CALL = ['日', '月', '火', '水', '木', '金', '土']
+
+  const teleapoByHour = useMemo(() => {
+    const map = Array.from({ length: 24 }, (_, h) => ({ name: `${h}時`, hour: h, calls: 0, connected: 0 }))
+    teleapoCallFiltered.forEach(item => {
+      ;(item.callHistory || []).forEach(c => {
+        if (!c.date) return
+        const hour = new Date(c.date).getHours()
+        map[hour].calls++
+        if (!['不在', '受付ブロック'].includes(c.result)) map[hour].connected++
+      })
+    })
+    return map.filter(d => d.calls > 0).map(d => ({
+      ...d, connectionRate: Number(((d.connected / d.calls) * 100).toFixed(1))
+    }))
+  }, [teleapoCallFiltered])
+
+  const teleapoByDayOfWeek = useMemo(() => {
+    const map = DAY_NAMES_CALL.map((d, i) => ({ name: d + '曜', dayIndex: i, calls: 0, connected: 0 }))
+    teleapoCallFiltered.forEach(item => {
+      ;(item.callHistory || []).forEach(c => {
+        if (!c.date) return
+        const day = new Date(c.date).getDay()
+        map[day].calls++
+        if (!['不在', '受付ブロック'].includes(c.result)) map[day].connected++
+      })
+    })
+    return map.map(d => ({ ...d, connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0 }))
+  }, [teleapoCallFiltered])
+
+  const teleapoByCallCount = useMemo(() => {
+    const buckets = [
+      { label: '1回', min: 1, max: 1, companies: 0, appo: 0 },
+      { label: '2回', min: 2, max: 2, companies: 0, appo: 0 },
+      { label: '3回', min: 3, max: 3, companies: 0, appo: 0 },
+      { label: '4〜5回', min: 4, max: 5, companies: 0, appo: 0 },
+      { label: '6回以上', min: 6, max: Infinity, companies: 0, appo: 0 },
+    ]
+    teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).forEach(item => {
+      const n = item.callHistory.length
+      const bucket = buckets.find(b => n >= b.min && n <= b.max)
+      if (bucket) {
+        bucket.companies++
+        if (item.status === 'アポ確定') bucket.appo++
+      }
+    })
+    return buckets.filter(b => b.companies > 0).map(b => ({
+      ...b, appoRate: Number(((b.appo / b.companies) * 100).toFixed(1))
+    }))
+  }, [teleapoCallFiltered])
 
   if (proposals.length === 0 && teleapoItems.length === 0) {
     return (
@@ -589,6 +1017,14 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                   : 'text-slate-500 hover:text-slate-700'
               }`}>
               テレアポ
+            </button>
+            <button onClick={() => setDashboardMode('email')}
+              className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                dashboardMode === 'email'
+                  ? 'bg-white text-[#2d6a9e] shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}>
+              メール分析
             </button>
           </div>
         </div>
@@ -625,13 +1061,46 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
             )}
           </div>
         )}
+        {/* メール分析モードのフィルター */}
+        {dashboardMode === 'email' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {allIndustries.length > 0 && (
+              <MultiSelect label="業種" selected={emailIndustryFilter} onChange={setEmailIndustryFilter} options={allIndustries} placeholder="全業種" />
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-400 font-medium">送信期間:</span>
+              <input type="date" value={emailDateFrom} onChange={e => setEmailDateFrom(e.target.value)}
+                className={`text-sm border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 ${emailDateFrom ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-700'}`} />
+              <span className="text-slate-400 text-xs">〜</span>
+              <input type="date" value={emailDateTo} onChange={e => setEmailDateTo(e.target.value)}
+                className={`text-sm border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 ${emailDateTo ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-700'}`} />
+            </div>
+            {(emailIndustryFilter.length > 0 || emailDateFrom || emailDateTo) && (
+              <button onClick={() => { setEmailIndustryFilter([]); setEmailDateFrom(''); setEmailDateTo('') }}
+                className="text-xs text-red-400 hover:text-red-600 px-2 py-1.5 rounded hover:bg-red-50 whitespace-nowrap">全解除</button>
+            )}
+          </div>
+        )}
         {/* テレアポモードのフィルター */}
-        {dashboardMode === 'teleapo' && teleapoSalesReps.length > 0 && (
-          <div className="flex items-center gap-2">
-            <MultiSelect label="担当" selected={teleapoRepFilter} onChange={setTeleapoRepFilter} options={teleapoSalesReps} placeholder="全担当" />
-            {teleapoRepFilter.length > 0 && (
-              <button onClick={() => setTeleapoRepFilter([])}
-                className="text-xs text-red-400 hover:text-red-600 px-2 py-1.5 rounded hover:bg-red-50 whitespace-nowrap">解除</button>
+        {dashboardMode === 'teleapo' && (
+          <div className="flex flex-wrap items-center gap-2">
+            {teleapoSalesReps.length > 0 && (
+              <MultiSelect label="担当" selected={teleapoRepFilter} onChange={setTeleapoRepFilter} options={teleapoSalesReps} placeholder="全担当" />
+            )}
+            {allIndustries.length > 0 && (
+              <MultiSelect label="業種" selected={teleapoIndustryFilter} onChange={setTeleapoIndustryFilter} options={allIndustries} placeholder="全業種" />
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-slate-400 font-medium">期間:</span>
+              <input type="date" value={teleapoDateFrom} onChange={e => setTeleapoDateFrom(e.target.value)}
+                className={`text-sm border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 ${teleapoDateFrom ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-700'}`} />
+              <span className="text-slate-400 text-xs">〜</span>
+              <input type="date" value={teleapoDateTo} onChange={e => setTeleapoDateTo(e.target.value)}
+                className={`text-sm border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 ${teleapoDateTo ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-700'}`} />
+            </div>
+            {(teleapoRepFilter.length > 0 || teleapoIndustryFilter.length > 0 || teleapoDateFrom || teleapoDateTo) && (
+              <button onClick={() => { setTeleapoRepFilter([]); setTeleapoIndustryFilter([]); setTeleapoDateFrom(''); setTeleapoDateTo('') }}
+                className="text-xs text-red-400 hover:text-red-600 px-2 py-1.5 rounded hover:bg-red-50 whitespace-nowrap">全解除</button>
             )}
           </div>
         )}
@@ -653,42 +1122,104 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
               <p className="text-sm">テレアポリストタブからデータを追加してください</p>
             </div>
           ) : (<>
-            {/* KPIカード */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 mb-5">
-              <KpiCard label="登録企業" value={teleapoStats.total} suffix="社" />
-              <KpiCard label="総架電数" value={teleapoStats.totalCalls} suffix="件" color="blue" />
-              <KpiCard label="アポ獲得" value={teleapoStats.appoGot} suffix="件" color="green"
-                sub={`獲得率 ${teleapoStats.appoRate}%`} />
-              <KpiCard label="アポ確定" value={teleapoStats.appoConfirmed} suffix="社" color="purple" />
-            </div>
-            <div className="grid grid-cols-3 gap-5 mb-6">
-              <KpiCard label="架電済" value={teleapoStats.called} suffix="社" color="blue" small />
-              <KpiCard label="未架電" value={teleapoStats.uncalled} suffix="社" color="amber" small />
-              <KpiCard label="Keep中" value={teleapoStats.kept} suffix="社" color="purple" small />
+
+            {/* ── ファネル KPI ── */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
+              <p className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">架電ファネル</p>
+              <div className="flex items-stretch gap-0">
+                {teleapoFunnel.map((step, i) => (
+                  <div key={step.label} className="flex items-center flex-1 min-w-0">
+                    <div className={`flex-1 rounded-xl px-4 py-3 text-center ${
+                      i === 0 ? 'bg-slate-100' :
+                      i === 1 ? 'bg-sky-50 border border-sky-200' :
+                      i === 2 ? 'bg-teal-50 border border-teal-200' :
+                      'bg-purple-50 border border-purple-200'
+                    }`}>
+                      <p className={`text-[11px] font-medium mb-1 ${
+                        i === 0 ? 'text-slate-500' :
+                        i === 1 ? 'text-sky-600' :
+                        i === 2 ? 'text-teal-600' :
+                        'text-purple-600'
+                      }`}>{step.label}</p>
+                      <p className={`text-2xl font-bold ${
+                        i === 0 ? 'text-slate-700' :
+                        i === 1 ? 'text-sky-700' :
+                        i === 2 ? 'text-teal-700' :
+                        'text-purple-700'
+                      }`}>{step.value}<span className="text-sm font-normal ml-0.5">社</span></p>
+                      {step.rate !== null && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">前段比 {step.rate}%</p>
+                      )}
+                    </div>
+                    {i < teleapoFunnel.length - 1 && (
+                      <div className="text-slate-300 text-xl mx-1 shrink-0">›</div>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* 日別架電推移 */}
+            {/* ── KPI カード ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+              <KpiCard label="登録企業" value={teleapoStats.total} suffix="社" />
+              <KpiCard label="総架電数" value={teleapoStats.totalCalls} suffix="件" color="blue"
+                sub={`消化率 ${teleapoStats.digestRate}%`} />
+              <KpiCard label="接続率" value={teleapoStats.connectionRate} suffix="%" color="green"
+                sub="不在・受付ブロック除く" />
+              <KpiCard label="アポ確定" value={teleapoStats.appoConfirmed} suffix="社" color="purple"
+                sub={`確定率 ${teleapoStats.appoRate}%（架電済比）`} />
+            </div>
+            <div className="grid grid-cols-4 gap-4 mb-5">
+              <KpiCard label="架電済" value={teleapoStats.called} suffix="社" color="blue" small />
+              <KpiCard label="未架電" value={teleapoStats.uncalled} suffix="社" color="amber" small />
+              <KpiCard label="Keep中（本日）" value={teleapoStats.kept} suffix="社" color="purple" small />
+              <KpiCard label="Keep転換率" value={teleapoKeepStats.keepConvRate} suffix="%" color="purple" small
+                sub={`Keep企業 ${teleapoKeepStats.everKept}社`} />
+            </div>
+
+            {/* ── 週別架電推移（結果別積み上げ） ── */}
+            {teleapoWeekly.length > 0 && (() => {
+              const RESULT_COLORS = {
+                '不在': '#94a3b8', '受付ブロック': '#64748b', '担当者不在': '#7dd3fc',
+                '資料送付済': '#60a5fa', '折り返し依頼': '#34d399', 'ヒアリング済': '#10b981',
+                '断り': '#f87171', '不明': '#cbd5e1',
+              }
+              const resultKeys = [...new Set(teleapoWeekly.flatMap(w => Object.keys(w).filter(k => !['week', 'label', 'total'].includes(k))))]
+              return (
+                <ChartCard title="週別架電推移（結果別）" sub={teleapoDateFrom || teleapoDateTo ? `${teleapoDateFrom || '〜'} 〜 ${teleapoDateTo || '〜'}` : '直近16週'}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={teleapoWeekly} margin={{ right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      {resultKeys.map(key => (
+                        <Bar key={key} dataKey={key} stackId="a" fill={RESULT_COLORS[key] || '#93b5d0'} name={key} />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )
+            })()}
+
+            {/* ── 日別架電推移 ── */}
             {teleapoDaily.length > 0 && (
               <ChartCard title="日別架電推移（直近30日）">
-                <ResponsiveContainer width="100%" height={220}>
-                  <ComposedChart data={teleapoDaily}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={teleapoDaily}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                     <XAxis dataKey="date" tick={{ fontSize: 10 }}
                       tickFormatter={d => `${d.slice(5, 7)}/${d.slice(8, 10)}`} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
-                    <Tooltip
-                      labelFormatter={d => d}
-                      contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 11 }} />
-                    <Bar yAxisId="left" dataKey="calls" name="架電数" fill="#4a82ae" radius={[3, 3, 0, 0]} />
-                    <Bar yAxisId="left" dataKey="appo" name="アポ獲得" fill="#0f766e" radius={[3, 3, 0, 0]} />
-                  </ComposedChart>
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip labelFormatter={d => d} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                    <Bar dataKey="calls" name="架電数" fill="#4a82ae" radius={[3, 3, 0, 0]} />
+                  </BarChart>
                 </ResponsiveContainer>
               </ChartCard>
             )}
 
-            {/* 架電結果分布 + 担当別架電数 */}
+            {/* ── 架電結果分布 + 担当別詳細 ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
               {teleapoResultDist.length > 0 && (
                 <ChartCard title="架電結果分布">
@@ -710,37 +1241,49 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
               {teleapoByRep.length > 0 && (
                 <ChartCard title="担当別架電実績">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-xs">
                       <thead className="bg-slate-50">
                         <tr>
-                          <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">担当</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">企業数</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">架電数</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">アポ獲得</th>
-                          <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">獲得率</th>
+                          <th className="px-2 py-2 text-left font-medium text-slate-500">担当</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">架電社数</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">架電数</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">接続率</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">平均架電回数</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">アポ確定</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">確定率</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">Keep数</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {teleapoByRep.map(r => (
-                          <tr key={r.name} className="hover:bg-slate-50">
-                            <td className="px-3 py-2 font-medium text-slate-800">
-                              <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#4a82ae] to-[#2d6a9e] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
+                          <tr key={r.name} className="hover:bg-sky-50 cursor-pointer transition-colors" onClick={() => navigateTeleapoWithFilters({ salesRep: r.name })}>
+                            <td className="px-2 py-2 font-medium text-slate-800">
+                              <div className="flex items-center gap-1.5">
+                                <div className="w-5 h-5 rounded-full bg-gradient-to-br from-[#4a82ae] to-[#2d6a9e] flex items-center justify-center text-white text-[9px] font-bold shrink-0">
                                   {r.name.slice(0, 1)}
                                 </div>
                                 {r.name}
                               </div>
                             </td>
-                            <td className="px-3 py-2 text-right">{r.companies}</td>
-                            <td className="px-3 py-2 text-right font-medium">{r.calls}</td>
-                            <td className="px-3 py-2 text-right text-[#0f766e] font-medium">{r.appo}</td>
-                            <td className="px-3 py-2 text-right">
-                              <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold ${
-                                r.appoRate >= 10 ? 'bg-green-100 text-green-700' :
-                                r.appoRate >= 5 ? 'bg-yellow-100 text-yellow-700' :
+                            <td className="px-2 py-2 text-right font-medium">{r.companies}</td>
+                            <td className="px-2 py-2 text-right font-medium">{r.calls}</td>
+                            <td className="px-2 py-2 text-right">
+                              <span className={`inline-block px-1 py-0.5 rounded text-[11px] font-bold ${
+                                r.connectionRate >= 60 ? 'bg-green-100 text-green-700' :
+                                r.connectionRate >= 40 ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-slate-100 text-slate-500'
+                              }`}>{r.connectionRate}%</span>
+                            </td>
+                            <td className="px-2 py-2 text-right text-slate-600">{r.avgCalls}回</td>
+                            <td className="px-2 py-2 text-right text-purple-600 font-medium">{r.appoConfirmed || 0}</td>
+                            <td className="px-2 py-2 text-right">
+                              <span className={`inline-block px-1 py-0.5 rounded text-[11px] font-bold ${
+                                r.appoRate >= 10 ? 'bg-purple-100 text-purple-700' :
+                                r.appoRate >= 5 ? 'bg-sky-100 text-sky-700' :
                                 'bg-slate-100 text-slate-500'
                               }`}>{r.appoRate}%</span>
                             </td>
+                            <td className="px-2 py-2 text-right text-[#4a82ae] font-medium">{r.keeps || 0}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -750,56 +1293,519 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
               )}
             </div>
 
-            {/* 業種別・従業員規模別アポ獲得率 */}
+            {/* ── 業種別・規模別（架電済み企業ベース） ── */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
               {teleapoByIndustry.length > 0 && (() => {
-                const chartH = Math.max(180, teleapoByIndustry.length * 38)
-                const maxRate = niceMax(teleapoByIndustry, 'appoRate')
+                const data = teleapoByIndustry
+                const chartH = Math.max(180, data.length * 40)
+                const maxRate = Math.max(niceMax(data, 'appoRate'), niceMax(data, 'connectionRate'))
                 const ticks = Array.from({ length: maxRate / 10 + 1 }, (_, i) => i * 10)
                 return (
-                  <ChartCard title="業種別アポ獲得率">
+                  <ChartCard title="業種別 アポ確定率 / 接続率" sub="母数：架電済み企業">
                     <ResponsiveContainer width="100%" height={chartH}>
-                      <BarChart data={teleapoByIndustry} layout="vertical" margin={{ left: 0, right: 40 }}>
+                      <BarChart data={data} layout="vertical" margin={{ left: 0, right: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis type="number" domain={[0, maxRate]} ticks={ticks} unit="%" tick={{ fontSize: 12 }} />
-                        <YAxis type="category" dataKey="name" tick={{ fontSize: 12 }} width={130}
-                          tickFormatter={(name) => {
-                            const d = teleapoByIndustry.find(r => r.name === name)
-                            const label = name.length > 5 ? name.slice(0, 5) + '…' : name
-                            return d ? `${label}(${d.calls})` : label
-                          }} />
-                        <Tooltip content={<TeleapoTooltipContent />} />
-                        <Bar dataKey="appoRate" name="アポ獲得率" barSize={20}
-                          label={{ position: 'right', fontSize: 11, fill: '#64748b', formatter: (v) => `${v}%` }}
-                          shape={(props) => <ClickableBar {...props} fill={navyByValue(props.payload?.appoRate || 0, maxRate)} />} />
+                        <XAxis type="number" domain={[0, maxRate]} ticks={ticks} unit="%" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120}
+                          tickFormatter={name => name.length > 6 ? name.slice(0, 6) + '…' : name} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                          formatter={(val, name) => [`${val}%`, name]} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={10}
+                          label={{ position: 'right', fontSize: 10, fill: '#64748b', formatter: v => `${v}%` }}
+                          shape={(props) => <ClickableBar {...props} fill="#0f766e" onClick={() => navigateTeleapoWithFilters({ industry: props.payload?.name })} />} />
+                        <Bar dataKey="connectionRate" name="接続率" fill="#4a82ae" barSize={10}
+                          shape={(props) => <ClickableBar {...props} fill="#4a82ae" onClick={() => navigateTeleapoWithFilters({ industry: props.payload?.name })} />} />
                       </BarChart>
                     </ResponsiveContainer>
                   </ChartCard>
                 )
               })()}
 
-              {teleapoByScale.length > 0 && (
-                <ChartCard title="従業員規模別アポ獲得率">
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={teleapoByScale} margin={{ right: 10 }}>
+              {teleapoByScale.length > 0 && (() => {
+                const data = teleapoByScale
+                const maxRate = Math.max(niceMax(data, 'appoRate'), niceMax(data, 'connectionRate'))
+                const ticks = Array.from({ length: maxRate / 10 + 1 }, (_, i) => i * 10)
+                return (
+                  <ChartCard title="従業員規模別 アポ確定率 / 接続率" sub="母数：架電済み企業">
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={data} margin={{ right: 10, bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={55} />
+                        <YAxis domain={[0, maxRate]} ticks={ticks} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                          formatter={(val, name) => [`${val}%`, name]} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={14}
+                          shape={(props) => <ClickableBar {...props} fill="#0f766e" onClick={() => navigateTeleapoWithFilters({ employeeScale: props.payload?.name })} />} />
+                        <Bar dataKey="connectionRate" name="接続率" fill="#4a82ae" barSize={14}
+                          shape={(props) => <ClickableBar {...props} fill="#4a82ae" onClick={() => navigateTeleapoWithFilters({ employeeScale: props.payload?.name })} />} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+                )
+              })()}
+            </div>
+
+            {/* ── 業種 × 従業員規模 クロス集計 ── */}
+            {teleapoCrossTab.industries.length > 0 && teleapoCrossTab.scales.length > 0 && (() => {
+              const { map, industries, scales } = teleapoCrossTab
+              const getCell = (ind, sc) => map[ind]?.[sc] || null
+              const rowTotal = (ind) => {
+                const cells = Object.values(map[ind] || {})
+                return cells.reduce((s, c) => ({ companies: s.companies + c.companies, calls: s.calls + c.calls, connected: s.connected + c.connected, appo: s.appo + c.appo }), { companies: 0, calls: 0, connected: 0, appo: 0 })
+              }
+              const colTotal = (sc) => industries.reduce((s, ind) => {
+                const c = map[ind]?.[sc]
+                if (!c) return s
+                return { companies: s.companies + c.companies, calls: s.calls + c.calls, connected: s.connected + c.connected, appo: s.appo + c.appo }
+              }, { companies: 0, calls: 0, connected: 0, appo: 0 })
+              const grandTotal = industries.reduce((s, ind) => {
+                const r = rowTotal(ind)
+                return { companies: s.companies + r.companies, calls: s.calls + r.calls, connected: s.connected + r.connected, appo: s.appo + r.appo }
+              }, { companies: 0, calls: 0, connected: 0, appo: 0 })
+
+              const CellContent = ({ c, isTotal }) => {
+                if (!c || c.companies === 0) return <span className="text-slate-300">—</span>
+                const connRate = c.calls > 0 ? Math.round(c.connected / c.calls * 100) : 0
+                const appoRate = c.companies > 0 ? Math.round(c.appo / c.companies * 100) : 0
+                return (
+                  <div className={`text-center ${isTotal ? 'font-semibold' : ''}`}>
+                    <div className="text-[10px] text-slate-400 mb-0.5">{c.companies}社</div>
+                    <div className={`text-[11px] font-medium ${connRate >= 60 ? 'text-green-600' : connRate >= 40 ? 'text-sky-600' : 'text-slate-500'}`}>
+                      通電 {connRate}%
+                    </div>
+                    <div className={`text-[11px] font-bold ${appoRate >= 10 ? 'text-purple-700' : appoRate >= 5 ? 'text-teal-600' : appoRate > 0 ? 'text-slate-600' : 'text-slate-300'}`}>
+                      確定 {appoRate}%
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <ChartCard title="業種 × 従業員規模 クロス集計" sub="母数：架電済み企業 ｜ 通電率＝不在・受付ブロック除く ｜ 確定率＝アポ確定社数÷架電社数">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          <th className="px-3 py-2 text-left font-medium text-slate-500 border border-slate-200 sticky left-0 bg-slate-50 z-10 min-w-[120px]">業種</th>
+                          {scales.map(sc => (
+                            <th key={sc} className="px-2 py-2 text-center font-medium text-slate-500 border border-slate-200 min-w-[90px] whitespace-nowrap">
+                              {sc}
+                            </th>
+                          ))}
+                          <th className="px-2 py-2 text-center font-medium text-slate-600 border border-slate-200 min-w-[90px] bg-slate-100">合計</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {industries.map((ind, ri) => {
+                          const rt = rowTotal(ind)
+                          return (
+                            <tr key={ind} className={ri % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                              <td className={`px-3 py-2 font-medium text-slate-700 border border-slate-200 sticky left-0 z-10 ${ri % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                                {ind.length > 10 ? ind.slice(0, 10) + '…' : ind}
+                              </td>
+                              {scales.map(sc => {
+                                const c = getCell(ind, sc)
+                                return (
+                                  <td key={sc} className="px-2 py-2 border border-slate-200 cursor-pointer hover:bg-sky-50 transition-colors"
+                                    onClick={() => c && navigateTeleapoWithFilters({ industry: ind, employeeScale: sc })}>
+                                    <CellContent c={c} />
+                                  </td>
+                                )
+                              })}
+                              <td className="px-2 py-2 border border-slate-200 bg-slate-50">
+                                <CellContent c={rt} isTotal />
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-100">
+                          <td className="px-3 py-2 font-semibold text-slate-600 border border-slate-200 sticky left-0 bg-slate-100 z-10">合計</td>
+                          {scales.map(sc => {
+                            const ct = colTotal(sc)
+                            return (
+                              <td key={sc} className="px-2 py-2 border border-slate-200">
+                                <CellContent c={ct} isTotal />
+                              </td>
+                            )
+                          })}
+                          <td className="px-2 py-2 border border-slate-200 bg-slate-200">
+                            <CellContent c={grandTotal} isTotal />
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </ChartCard>
+              )
+            })()}
+
+            {/* ── 架電タイミング分析 ── */}
+            {(teleapoByHour.length > 0 || teleapoByDayOfWeek.some(d => d.calls > 0)) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                {teleapoByHour.length > 0 && (
+                  <ChartCard title="時間帯別 架電件数 / 接続率" sub="架電記録から集計">
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={teleapoByHour}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={1} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                        <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(v, n) => n === 'connectionRate' ? [`${v}%`, '接続率'] : [`${v}件`, '架電件数']} />
+                        <Bar yAxisId="left" dataKey="calls" name="架電件数" fill="#93b5d0" barSize={14} radius={[2, 2, 0, 0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="connectionRate" name="接続率" stroke="#0f766e" strokeWidth={2} dot={{ r: 3 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+                )}
+                <ChartCard title="曜日別 架電件数 / 接続率" sub="架電記録から集計">
+                  {teleapoByDayOfWeek.every(d => d.calls === 0) ? (
+                    <p className="text-sm text-slate-400 py-4 text-center">架電データなし</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={teleapoByDayOfWeek}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                        <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(v, n) => n === 'connectionRate' ? [`${v}%`, '接続率'] : [`${v}件`, '架電件数']} />
+                        <Bar yAxisId="left" dataKey="calls" name="架電件数" fill="#93b5d0" barSize={20} radius={[2, 2, 0, 0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="connectionRate" name="接続率" stroke="#0f766e" strokeWidth={2} dot={{ r: 4 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </ChartCard>
+              </div>
+            )}
+            {teleapoByCallCount.length > 0 && (
+              <ChartCard title="架電回数別 アポ確定率" sub="N回架電した企業のうちアポ確定になった割合" className="mb-4">
+                <ResponsiveContainer width="100%" height={220}>
+                  <ComposedChart data={teleapoByCallCount}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                    <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, '架電社数']} />
+                    <Bar yAxisId="left" dataKey="companies" name="架電社数" fill="#b8cfe0" barSize={30} radius={[2, 2, 0, 0]} />
+                    <Line yAxisId="right" type="monotone" dataKey="appoRate" name="アポ確定率" stroke="#c97a1a" strokeWidth={2.5} dot={{ r: 5, fill: '#c97a1a' }}
+                      label={{ position: 'top', fontSize: 11, fill: '#c97a1a', formatter: v => v > 0 ? `${v}%` : '' }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+
+            {/* ── メール × 架電 相関（テレアポタブ内サマリ） ── */}
+            {emailAppoCorr.some(d => d.companies > 0) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                <ChartCard title="メール送信有無別 アポ確定率" sub="メール→架電の効果検証">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={emailAppoCorr} margin={{ top: 10, right: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                      <YAxis domain={[0, niceMax(teleapoByScale, 'appoRate')]}
-                        ticks={Array.from({ length: niceMax(teleapoByScale, 'appoRate') / 10 + 1 }, (_, i) => i * 10)}
-                        unit="%" tick={{ fontSize: 12 }} />
-                      <Tooltip content={<TeleapoTooltipContent />} />
-                      <Bar dataKey="appoRate" name="アポ獲得率"
-                        label={{ position: 'top', fontSize: 11, fill: '#64748b', formatter: (v) => `${v}%` }}
-                        shape={(props) => {
-                          const scaleMax = niceMax(teleapoByScale, 'appoRate')
-                          return <ClickableBar {...props} fill={navyByValue(props.payload?.appoRate || 0, scaleMax)} />
-                        }} />
+                      <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
+                      <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={50} radius={[4,4,0,0]}
+                        label={{ position: 'top', fontSize: 13, fill: '#0f766e', formatter: v => `${v}%` }} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  <div className="flex justify-around mt-1 text-xs text-slate-500">
+                    {emailAppoCorr.map(d => <span key={d.name}>{d.companies}社</span>)}
+                  </div>
+                </ChartCard>
+
+                {emailLagAppo.length > 0 && (
+                  <ChartCard title="送信〜架電 経過日数別 アポ確定率" sub="最適な架電タイミング検証">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={emailLagAppo} margin={{ top: 10, right: 10, bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                        <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
+                        <Bar dataKey="appoRate" name="アポ確定率" fill="#7c3aed" barSize={30} radius={[4,4,0,0]}
+                          label={{ position: 'top', fontSize: 11, fill: '#7c3aed', formatter: v => `${v}%` }} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+                )}
+              </div>
+            )}
+
+            {/* ── 未架電企業内訳 ── */}
+            {teleapoUncalled.total > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
+                <ChartCard title={`未架電企業内訳（業種別）`} sub={`全${teleapoUncalled.total}社`}>
+                  <ResponsiveContainer width="100%" height={Math.max(160, teleapoUncalled.byIndustry.length * 36)}>
+                    <BarChart data={teleapoUncalled.byIndustry} layout="vertical" margin={{ left: 0, right: 40 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120}
+                        tickFormatter={name => name.length > 6 ? name.slice(0, 6) + '…' : name} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      <Bar dataKey="value" name="未架電社数" fill="#f59e0b" barSize={18}
+                        label={{ position: 'right', fontSize: 11, fill: '#64748b' }}
+                        shape={(props) => <ClickableBar {...props} fill="#f59e0b" onClick={() => navigateTeleapoWithFilters({ industry: props.payload?.name })} />} />
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>
-              )}
-            </div>
+                <ChartCard title="未架電企業内訳（規模別）" sub={`全${teleapoUncalled.total}社`}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={teleapoUncalled.byScale} margin={{ right: 10, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={55} />
+                      <YAxis tick={{ fontSize: 11 }} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                      <Bar dataKey="value" name="未架電社数" fill="#f59e0b" barSize={20}
+                        shape={(props) => <ClickableBar {...props} fill="#f59e0b" onClick={() => navigateTeleapoWithFilters({ employeeScale: props.payload?.name })} />} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              </div>
+            )}
+
           </>)}
+        </div>
+      )}
+
+      {/* ========== メール分析 ダッシュボード ========== */}
+      {dashboardMode === 'email' && (
+        <div>
+          {teleapoItems.length === 0 ? (
+            <div className="text-center py-16 text-slate-400">
+              <p className="text-base mb-1">テレアポデータがありません</p>
+              <p className="text-sm">テレアポリストからデータを追加してください</p>
+            </div>
+          ) : (
+            <>
+              {/* KPIカード */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                {[
+                  { label: 'メールあり企業', value: emailStats.withEmail, sub: `全${emailStats.total}社中`, color: 'text-slate-700' },
+                  { label: '送信済み', value: emailStats.sent, sub: `送信率 ${emailStats.sentRate}%`, color: 'text-blue-600' },
+                  { label: '開封済み', value: emailStats.opened, sub: `開封率 ${emailStats.openRate}%`, color: 'text-amber-600' },
+                  { label: 'クリック済み', value: emailStats.clicked, sub: `クリック率 ${emailStats.clickRate}%`, color: 'text-emerald-600' },
+                ].map(kpi => (
+                  <div key={kpi.label} className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-4">
+                    <p className="text-xs text-slate-500 mb-1">{kpi.label}</p>
+                    <p className={`text-3xl font-bold ${kpi.color}`}>{kpi.value}<span className="text-base font-normal ml-1">社</span></p>
+                    <p className="text-xs text-slate-400 mt-1">{kpi.sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* メールファネル */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
+                <p className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">メールファネル</p>
+                <div className="space-y-4">
+                  {[
+                    { label: '送信率', value: emailStats.sentRate, color: 'bg-blue-500', desc: `${emailStats.sent}社 / メールあり${emailStats.withEmail}社` },
+                    { label: '開封率', value: emailStats.openRate, color: 'bg-amber-400', desc: `${emailStats.opened}社 / 送信済み${emailStats.sent}社` },
+                    { label: 'クリック率', value: emailStats.clickRate, color: 'bg-emerald-500', desc: `${emailStats.clicked}社 / 送信済み${emailStats.sent}社` },
+                  ].map(row => (
+                    <div key={row.label}>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-sm font-medium text-slate-700">{row.label}</span>
+                        <span className="text-sm font-bold text-slate-800">{row.value}%</span>
+                      </div>
+                      <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${row.color} rounded-full transition-all`} style={{ width: `${Math.min(row.value, 100)}%` }} />
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">{row.desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* ── 業種別・規模別 ── */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                {emailByIndustry.length > 0 && (
+                  <ChartCard title="業種別 メールカバレッジ / 送信率" sub="カバレッジ＝メアドあり企業÷全企業">
+                    <ResponsiveContainer width="100%" height={Math.max(200, emailByIndustry.length * 44)}>
+                      <BarChart data={emailByIndustry} layout="vertical" margin={{ left: 0, right: 50 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis type="number" domain={[0, 100]} ticks={[0,25,50,75,100]} unit="%" tick={{ fontSize: 11 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120}
+                          tickFormatter={n => n.length > 6 ? n.slice(0,6) + '…' : n} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                          formatter={(v, n) => [`${v}%`, n]} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="coverageRate" name="カバレッジ率" fill="#94a3b8" barSize={10}
+                          label={{ position: 'right', fontSize: 10, fill: '#64748b', formatter: v => `${v}%` }} />
+                        <Bar dataKey="sentRate" name="送信率" fill="#3b82f6" barSize={10} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+                )}
+                {emailByScale.length > 0 && (
+                  <ChartCard title="従業員規模別 メールカバレッジ / 送信率" sub="カバレッジ＝メアドあり企業÷全企業">
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={emailByScale} margin={{ right: 10, bottom: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={55} />
+                        <YAxis domain={[0, 100]} ticks={[0,25,50,75,100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                          formatter={(v, n) => [`${v}%`, n]} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="coverageRate" name="カバレッジ率" fill="#94a3b8" barSize={14} />
+                        <Bar dataKey="sentRate" name="送信率" fill="#3b82f6" barSize={14} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </ChartCard>
+                )}
+              </div>
+
+              {/* ── テンプレート別 ── */}
+              {emailByTemplate.length > 0 && (
+                <ChartCard title="テンプレート別 送信数 / 開封率" sub="母数：送信済み企業" className="mb-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 text-xs text-slate-500 font-medium">
+                          <th className="px-3 py-2 text-left border border-slate-200">テンプレート名</th>
+                          <th className="px-3 py-2 text-right border border-slate-200">送信数</th>
+                          <th className="px-3 py-2 text-right border border-slate-200">開封済み</th>
+                          <th className="px-3 py-2 text-right border border-slate-200">開封率</th>
+                          <th className="px-3 py-2 text-right border border-slate-200">クリック率</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {emailByTemplate.map((t, i) => (
+                          <tr key={t.name} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                            <td className="px-3 py-2.5 font-medium text-slate-700 border border-slate-200">{t.name}</td>
+                            <td className="px-3 py-2.5 text-right text-slate-600 border border-slate-200">{t.sent}社</td>
+                            <td className="px-3 py-2.5 text-right text-amber-600 font-medium border border-slate-200">{t.opened}社</td>
+                            <td className="px-3 py-2.5 text-right border border-slate-200">
+                              <span className={`font-semibold ${t.openRate >= 30 ? 'text-emerald-600' : t.openRate >= 15 ? 'text-amber-600' : 'text-slate-500'}`}>{t.openRate}%</span>
+                            </td>
+                            <td className="px-3 py-2.5 text-right border border-slate-200">
+                              <span className={`font-semibold ${t.clickRate >= 10 ? 'text-emerald-600' : 'text-slate-500'}`}>{t.clickRate}%</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </ChartCard>
+              )}
+
+              {/* ── 送信タイミング別（曜日・時間帯） ── */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                <ChartCard title="送信曜日別 送信数 / 開封率" sub="送信日時ベース">
+                  {emailByDayOfWeek.every(d => d.sent === 0) ? (
+                    <p className="text-sm text-slate-400 py-4 text-center">送信データなし</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={emailByDayOfWeek}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                        <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar yAxisId="left" dataKey="sent" name="送信数" fill="#3b82f6" barSize={24} radius={[3,3,0,0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="openRate" name="開封率" stroke="#f59e0b" strokeWidth={2} dot={{ r: 4 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </ChartCard>
+
+                <ChartCard title="送信時間帯別 送信数 / 開封率" sub="送信日時ベース">
+                  {emailByHour.length === 0 ? (
+                    <p className="text-sm text-slate-400 py-4 text-center">送信データなし</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={emailByHour}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={45} />
+                        <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+                        <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar yAxisId="left" dataKey="sent" name="送信数" fill="#6366f1" barSize={16} radius={[2,2,0,0]} />
+                        <Line yAxisId="right" type="monotone" dataKey="openRate" name="開封率" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  )}
+                </ChartCard>
+              </div>
+
+              {/* ── メール × 架電 相関分析 ── */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+                <p className="text-xs font-semibold text-slate-600 mb-3 uppercase tracking-wide">メール → 架電 相関分析</p>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                  {/* メールあり/なし別 */}
+                  <ChartCard title="メール送信有無別 アポ確定率" sub="架電済み企業ベース">
+                    <ResponsiveContainer width="100%" height={200}>
+                      <BarChart data={emailAppoCorrF} margin={{ top: 10, right: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                        <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                          formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
+                        <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={40} radius={[4,4,0,0]}
+                          label={{ position: 'top', fontSize: 12, fill: '#0f766e', formatter: v => `${v}%` }} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div className="flex justify-around mt-1 text-xs text-slate-500">
+                      {emailAppoCorrF.map(d => <span key={d.name}>{d.companies}社</span>)}
+                    </div>
+                  </ChartCard>
+
+                  {/* 経過日数別 */}
+                  <ChartCard title="送信〜架電 経過日数別 アポ確定率" sub="emailSentAt と初回架電日の差">
+                    {emailLagAppoF.length === 0 ? (
+                      <p className="text-sm text-slate-400 py-8 text-center">データなし<br/><span className="text-xs">（メール送信後に架電した企業が必要）</span></p>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={emailLagAppoF} margin={{ top: 10, right: 10, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
+                          <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                            formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
+                          <Bar dataKey="appoRate" name="アポ確定率" fill="#7c3aed" barSize={28} radius={[4,4,0,0]}
+                            label={{ position: 'top', fontSize: 11, fill: '#7c3aed', formatter: v => `${v}%` }} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </ChartCard>
+
+                  {/* 開封状態別 */}
+                  <ChartCard title="開封状態別 接続率 / アポ確定率" sub="SendGrid連携後に自動更新">
+                    {emailOpenAppoCorr.length === 0 ? (
+                      <p className="text-sm text-slate-400 py-8 text-center">データなし</p>
+                    ) : (
+                      <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={emailOpenAppoCorr} margin={{ top: 10, right: 10, bottom: 30 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={0} angle={-15} textAnchor="end" height={55} />
+                          <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                            formatter={(v, n) => [`${v}%`, n]} />
+                          <Legend wrapperStyle={{ fontSize: 10 }} />
+                          <Bar dataKey="connectionRate" name="接続率" fill="#4a82ae" barSize={14} />
+                          <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={14} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </ChartCard>
+                </div>
+              </div>
+
+              {/* 注記 */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+                <p className="font-semibold mb-1">開封率・クリック率について</p>
+                <p>現在、開封・クリックはSendGrid Webhookが未接続のため自動更新されません。バックエンド実装後、リアルタイムで追跡されます。</p>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -821,13 +1827,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
         <KpiCard label="進行中" value={stats.inProgress} suffix="件" color="amber" onClick={() => navigateWithFilters({ status: '進行中' })} />
         <KpiCard label="失注" value={stats.lost} suffix="件" color="red" onClick={() => navigateWithFilters({ status: '失注' })} />
       </div>
-      {/* KPI Cards - Bottom Row: Revenue */}
-      <div className="grid grid-cols-3 gap-5 mb-6">
-        <KpiCard label="見込み合計" value={formatYen(stats.expectedTotal)} color="blue" small />
-        <KpiCard label="受注金額" value={formatYen(stats.actualTotal)} color="green" small />
-        <KpiCard label="パイプライン" value={formatYen(stats.pipelineAmount)} color="purple" small />
-      </div>
-
       {/* Pipeline - Full Width */}
       {funnelData.length > 0 && (
         <ChartCard title="パイプライン">
@@ -848,8 +1847,12 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
               />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar yAxisId="left" dataKey="proposals" name="提案数" fill="#4a82ae" radius={[3, 3, 0, 0]} />
-              <Bar yAxisId="left" dataKey="won" name="受注数" fill="#0f766e" radius={[3, 3, 0, 0]} />
+              <Bar yAxisId="left" dataKey="proposals" name="提案数" fill="#4a82ae" radius={[3, 3, 0, 0]}
+                activeBar={{ fill: '#4a82ae', fillOpacity: 0.55 }}
+                className="cursor-pointer" onClick={(d) => navigateWithFilters({ month: d.month })} />
+              <Bar yAxisId="left" dataKey="won" name="受注数" fill="#0f766e" radius={[3, 3, 0, 0]}
+                activeBar={{ fill: '#0f766e', fillOpacity: 0.55 }}
+                className="cursor-pointer" onClick={(d) => navigateWithFilters({ month: d.month, status: '受注' })} />
               <Line yAxisId="right" type="monotone" dataKey="winRate" name="受注率(%)" stroke="#b45309" strokeWidth={2} dot={{ r: 3 }} />
             </ComposedChart>
           </ResponsiveContainer>
@@ -867,13 +1870,11 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                   <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">提案</th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">受注</th>
                   <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">受注率</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">見込み</th>
-                  <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">受注額</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {repSummary.map(r => (
-                  <tr key={r.name} className="hover:bg-slate-50">
+                  <tr key={r.name} className="hover:bg-sky-50 cursor-pointer transition-colors" onClick={() => navigateWithFilters({ salesRep: r.name })}>
                     <td className="px-3 py-2 font-medium text-slate-800">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#4a82ae] to-[#2d6a9e] flex items-center justify-center text-white text-[10px] font-bold shrink-0">
@@ -893,8 +1894,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                         {r.winRate}%
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-right text-slate-600 text-xs">{formatYen(r.expected)}</td>
-                    <td className="px-3 py-2 text-right text-green-700 font-medium text-xs">{formatYen(r.actual)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1020,6 +2019,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
           // 全セルのrate最大値を取得（色の基準）
           const allRates = data.matrix.flatMap(r => r.cells.map(c => c.rate)).filter(r => r !== null)
           const maxRate = Math.max(...allRates, 1)
+          const hmKeys = HEATMAP_KEYS[heatmapTab]
 
           return (
             <div className="overflow-x-auto">
@@ -1050,9 +2050,11 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                           : 'rgba(226, 232, 240, 0.3)'
                         const textColor = intensity > 0.5 ? '#fff' : '#334155'
                         return (
-                          <td key={cell.col} className="px-2 py-2 text-center border-b border-slate-100 cursor-default"
+                          <td key={cell.col}
+                            className="px-2 py-2 text-center border-b border-slate-100 cursor-pointer hover:opacity-80 transition-opacity"
                             style={{ backgroundColor: bgColor, color: textColor }}
-                            title={`${row.row} × ${cell.col}\n受注率: ${cell.rate}%（受注${cell.won}件 / 提案${cell.total}件）`}>
+                            title={`${row.row} × ${cell.col}\n受注率: ${cell.rate}%（受注${cell.won}件 / 提案${cell.total}件）`}
+                            onClick={() => navigateWithFilters({ [hmKeys.row]: row.row, [hmKeys.col]: cell.col })}>
                             <div className="font-bold leading-tight">{cell.rate}%</div>
                             <div className="text-[10px] leading-tight" style={{ opacity: 0.75 }}>({cell.total})</div>
                           </td>
@@ -1144,7 +2146,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} />
                       <Tooltip content={<RevisitCrossTooltip />} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Bar yAxisId="right" dataKey="denominator" name="提案数" fill="#dbe6f0" radius={[3, 3, 0, 0]} />
+                      <Bar yAxisId="right" dataKey="denominator" name="提案数" fill="#dbe6f0" radius={[3, 3, 0, 0]}
+                        activeBar={{ fill: '#dbe6f0', fillOpacity: 0.5 }}
+                        className="cursor-pointer" onClick={(d) => navigateWithFilters({ month: d.name, decisionMaker: 'yes' })} />
                       <Line yAxisId="left" type="monotone" dataKey="rate" name="取得率" stroke="#1a5285" strokeWidth={2} dot={{ r: 4 }} />
                     </ComposedChart>
                   </ResponsiveContainer>
@@ -1167,7 +2171,14 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, us
                       }} />
                     <Tooltip content={<RevisitCrossTooltip />} />
                     <Bar dataKey="rate" name="決裁者アポ取得率" fill="#2d6a9e" barSize={18}
-                      shape={(props) => <ClickableBar {...props} fill={navyByValue(props.payload?.rate || 0, maxVal)} />} />
+                      shape={(props) => {
+                        const extra = { decisionMaker: 'yes' }
+                        if (revisitTab === 'byRep') extra.salesRep = props.payload?.name
+                        else if (revisitTab === 'byIndustry') extra.industry = props.payload?.name
+                        else if (revisitTab === 'byRelationship') extra.relationship = props.payload?.name
+                        else if (revisitTab === 'byScale') extra.employeeScale = props.payload?.name
+                        return <ClickableBar {...props} fill={navyByValue(props.payload?.rate || 0, maxVal)} onClick={() => navigateWithFilters(extra)} />
+                      }} />
                   </BarChart>
                 </ResponsiveContainer>
               )
@@ -1222,7 +2233,7 @@ function PipelineBar({ data, onClickSegment }) {
             <div
               key={d.name}
               onClick={() => onClickSegment?.(d.name)}
-              className="relative group flex items-center justify-center overflow-hidden transition-all duration-300 cursor-pointer"
+              className="relative group flex items-center justify-center overflow-hidden transition-all duration-300 cursor-pointer hover:opacity-70"
               style={{
                 width: `${pct}%`,
                 backgroundColor: FUNNEL_COLORS[i % FUNNEL_COLORS.length],
@@ -1237,7 +2248,6 @@ function PipelineBar({ data, onClickSegment }) {
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-slate-800 text-white text-[11px] rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 shadow-lg">
                 <span className="font-bold">{d.name}</span>
                 <span className="ml-1.5 opacity-80">{d.count}件 ({pct.toFixed(1)}%)</span>
-                {d.amount > 0 && <span className="ml-1.5 opacity-80">{formatYen(d.amount)}</span>}
                 <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
               </div>
             </div>

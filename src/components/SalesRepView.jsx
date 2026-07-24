@@ -14,14 +14,6 @@ function navyByValue(value, max) {
   return NAVY_SCALE[idx]
 }
 
-function formatYen(amount) {
-  if (!amount) return '¥0'
-  if (amount >= 100000000) return `¥${(amount / 100000000).toFixed(1)}億`
-  if (amount >= 10000) return `¥${(amount / 10000).toFixed(amount % 10000 === 0 ? 0 : 1)}万`
-  return `¥${amount.toLocaleString()}`
-}
-
-
 function daysBetween(dateStr1, dateStr2) {
   if (!dateStr1 || !dateStr2) return null
   const d1 = new Date(dateStr1)
@@ -55,8 +47,7 @@ export default function SalesRepView({ proposals, users = [] }) {
       if (!map[name]) {
         map[name] = {
           name, total: 0, won: 0, lost: 0, inProgress: 0, appoConfirmed: 0,
-          denominator: 0, expectedTotal: 0, actualTotal: 0,
-          pipelineAmount: 0,
+          denominator: 0,
         }
       }
       const r = map[name]
@@ -65,16 +56,9 @@ export default function SalesRepView({ proposals, users = [] }) {
       } else {
         r.total++
         r.denominator++
-        if (wonStatuses.includes(p.status)) {
-          r.won++
-          r.actualTotal += (p.actualAmount || 0)
-        }
+        if (wonStatuses.includes(p.status)) r.won++
         if (p.status === '失注') r.lost++
-        if (inProgressStatuses.includes(p.status)) {
-          r.inProgress++
-          r.pipelineAmount += (p.expectedAmount || 0)
-        }
-        r.expectedTotal += (p.expectedAmount || 0)
+        if (inProgressStatuses.includes(p.status)) r.inProgress++
       }
     })
 
@@ -96,7 +80,6 @@ export default function SalesRepView({ proposals, users = [] }) {
       return {
         name: status,
         count: items.length,
-        amount: items.reduce((s, p) => s + (p.expectedAmount || 0), 0),
       }
     }).filter(d => d.count > 0)
 
@@ -105,12 +88,9 @@ export default function SalesRepView({ proposals, users = [] }) {
     repProposals.forEach(p => {
       if (!p.initialDate) return
       const month = p.initialDate.slice(0, 7)
-      if (!monthMap[month]) monthMap[month] = { month, total: 0, won: 0, amount: 0 }
+      if (!monthMap[month]) monthMap[month] = { month, total: 0, won: 0 }
       monthMap[month].total++
-      if (['受注', '決裁者合意'].includes(p.status)) {
-        monthMap[month].won++
-        monthMap[month].amount += (p.actualAmount || 0)
-      }
+      if (['受注', '決裁者合意'].includes(p.status)) monthMap[month].won++
     })
     const monthly = Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month))
 
@@ -153,12 +133,9 @@ export default function SalesRepView({ proposals, users = [] }) {
       const map = {}
       repProposals.forEach(p => {
         const ind = p.industry || '(未設定)'
-        if (!map[ind]) map[ind] = { name: ind, total: 0, won: 0, lost: 0, amount: 0 }
+        if (!map[ind]) map[ind] = { name: ind, total: 0, won: 0, lost: 0 }
         map[ind].total++
-        if (['受注', '決裁者合意'].includes(p.status)) {
-          map[ind].won++
-          map[ind].amount += (p.actualAmount || 0)
-        }
+        if (['受注', '決裁者合意'].includes(p.status)) map[ind].won++
         if (p.status === '失注') map[ind].lost++
       })
       return Object.values(map)
@@ -174,12 +151,9 @@ export default function SalesRepView({ proposals, users = [] }) {
       const map = {}
       repProposals.forEach(p => {
         const rel = p.relationship || '(未設定)'
-        if (!map[rel]) map[rel] = { name: rel, total: 0, won: 0, lost: 0, amount: 0 }
+        if (!map[rel]) map[rel] = { name: rel, total: 0, won: 0, lost: 0 }
         map[rel].total++
-        if (['受注', '決裁者合意'].includes(p.status)) {
-          map[rel].won++
-          map[rel].amount += (p.actualAmount || 0)
-        }
+        if (['受注', '決裁者合意'].includes(p.status)) map[rel].won++
         if (p.status === '失注') map[rel].lost++
       })
       return Object.values(map)
@@ -219,9 +193,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">受注率</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">進行中</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">失注</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">見込み合計</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">受注金額</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">パイプライン</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -255,9 +226,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                   </td>
                   <td className="px-4 py-3 text-right text-[#4a82ae] font-medium">{rep.inProgress}</td>
                   <td className="px-4 py-3 text-right text-[#be123c]">{rep.lost}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{formatYen(rep.expectedTotal)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-[#0f766e]">{formatYen(rep.actualTotal)}</td>
-                  <td className="px-4 py-3 text-right text-[#4a82ae]">{formatYen(rep.pipelineAmount)}</td>
                 </tr>
               ))}
             </tbody>
@@ -270,9 +238,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                 <td className="px-4 py-3 text-right">-</td>
                 <td className="px-4 py-3 text-right text-[#4a82ae]">{reps.reduce((s, r) => s + r.inProgress, 0)}</td>
                 <td className="px-4 py-3 text-right text-[#be123c]">{reps.reduce((s, r) => s + r.lost, 0)}</td>
-                <td className="px-4 py-3 text-right">{formatYen(reps.reduce((s, r) => s + r.expectedTotal, 0))}</td>
-                <td className="px-4 py-3 text-right text-[#0f766e]">{formatYen(reps.reduce((s, r) => s + r.actualTotal, 0))}</td>
-                <td className="px-4 py-3 text-right text-[#4a82ae]">{formatYen(reps.reduce((s, r) => s + r.pipelineAmount, 0))}</td>
               </tr>
             </tfoot>
           </table>
@@ -290,7 +255,7 @@ export default function SalesRepView({ proposals, users = [] }) {
           </h3>
 
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-3 gap-4 mb-6">
             {(() => {
               const rep = reps.find(r => r.name === selectedRep)
               if (!rep) return null
@@ -307,14 +272,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                   <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
                     <p className="text-xs text-[#0f766e] font-medium">受注率</p>
                     <p className="text-2xl font-bold text-[#0f766e]">{rep.winRate}%</p>
-                  </div>
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <p className="text-xs text-[#b45309] font-medium">見込み合計</p>
-                    <p className="text-xl font-bold text-[#b45309]">{formatYen(rep.expectedTotal)}</p>
-                  </div>
-                  <div className="bg-teal-50 border border-teal-200 rounded-lg p-3">
-                    <p className="text-xs text-[#0f766e] font-medium">受注金額</p>
-                    <p className="text-xl font-bold text-[#0f766e]">{formatYen(rep.actualTotal)}</p>
                   </div>
                 </>
               )
@@ -365,7 +322,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                         <th className="py-2 text-right text-slate-500 font-medium">受注</th>
                         <th className="py-2 text-right text-slate-500 font-medium">失注</th>
                         <th className="py-2 text-right text-slate-500 font-medium">受注率</th>
-                        <th className="py-2 text-right text-slate-500 font-medium">受注額</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -387,9 +343,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                             ) : (
                               <span className="text-slate-300">-</span>
                             )}
-                          </td>
-                          <td className="py-2 text-right text-[#0f766e] font-medium">
-                            {d.amount > 0 ? formatYen(d.amount) : '-'}
                           </td>
                         </tr>
                       ))}
@@ -478,7 +431,7 @@ export default function SalesRepView({ proposals, users = [] }) {
                             }}
                           >
                             <span className="text-white text-[10px] font-bold whitespace-nowrap">
-                              {d.count}件 {d.amount > 0 ? formatYen(d.amount) : ''}
+                              {d.count}件
                             </span>
                           </div>
                         </div>
@@ -521,8 +474,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                     <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">業種</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">状況</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">関係性</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">見込み</th>
-                    <th className="px-3 py-2 text-right text-xs font-medium text-slate-500">受注額</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -540,12 +491,6 @@ export default function SalesRepView({ proposals, users = [] }) {
                         </span>
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-slate-500 text-xs">{p.relationship || '-'}</td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap text-blue-600">
-                        {p.expectedAmount > 0 ? formatYen(p.expectedAmount) : '-'}
-                      </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap font-medium text-green-700">
-                        {p.actualAmount > 0 ? formatYen(p.actualAmount) : '-'}
-                      </td>
                     </tr>
                   ))}
                 </tbody>

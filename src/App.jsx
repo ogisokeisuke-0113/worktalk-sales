@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys } from './storage'
+import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys, loadDownloadLeads, saveDownloadLeads } from './storage'
+import { db } from './lib/db'
+import { isSupabaseEnabled } from './lib/supabase'
 import { EMPLOYEE_SCALES } from './constants'
 import Dashboard from './components/Dashboard'
 import ProposalList from './components/ProposalList'
 import SalesRepView from './components/SalesRepView'
 import TeleapoList from './components/TeleapoList'
-import PerformanceAnalysis from './components/PerformanceAnalysis'
 import Settings from './components/Settings'
 import LoginScreen from './components/LoginScreen'
 
@@ -14,7 +15,6 @@ const TABS = [
   { id: 'reps', label: '担当別' },
   { id: 'proposals', label: '提案リスト' },
   { id: 'teleapo', label: 'テレアポ' },
-  { id: 'performance', label: '成果分析' },
 ]
 
 // ========== スプレッドシート同期 ==========
@@ -88,7 +88,13 @@ function formatSheetDate(val) {
   const slashMatch = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/)
   if (slashMatch) return `${slashMatch[1]}-${slashMatch[2].padStart(2, '0')}-${slashMatch[3].padStart(2, '0')}`
   const d = new Date(s)
-  if (!isNaN(d)) return d.toISOString().slice(0, 10)
+  if (!isNaN(d)) {
+    // toISOString() はUTC基準のため日本時間と1日ズレる → ローカル時間で取得
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
   return s
 }
 
@@ -117,27 +123,22 @@ function upsertFromSheet(existing, incoming) {
   const result = [...existing]
   for (const row of incoming) {
     if (!row.companyName) continue
-    // sheetRowIndex で一致 → なければ企業名で一致
-    let idx = row._sheetRowIndex !== undefined
-      ? result.findIndex(p => p._sheetRowIndex === row._sheetRowIndex)
-      : -1
-    if (idx < 0) idx = result.findIndex(p => p.companyName === row.companyName)
+    // 企業名で先に一致を試みる（行番号ズレによる重複防止）
+    // 企業名一致しなければ sheetRowIndex で一致
+    let idx = result.findIndex(p => p.companyName === row.companyName)
+    if (idx < 0 && row._sheetRowIndex !== undefined) {
+      idx = result.findIndex(p => p._sheetRowIndex === row._sheetRowIndex)
+    }
 
     if (idx >= 0) {
-      // 既存: シートの項目で上書き（空欄の場合は既存の値を保持）、Sales Board固有項目は保持
-      const merged = { ...result[idx] }
-      for (const [k, v] of Object.entries(row)) {
-        if (v !== '' && v !== null && v !== undefined) {
-          merged[k] = v
-        }
-      }
+      // 既存: スプレッドシートが正 → シートの全フィールドで上書き
+      // Sales Board固有項目（活動ログ・フラグ・金額）のみ保持
       result[idx] = {
-        ...merged,
+        ...result[idx],
+        ...row,
         id: result[idx].id,
         activityLog: result[idx].activityLog || [],
         priorityFlag: result[idx].priorityFlag ?? false,
-        expectedAmount: result[idx].expectedAmount ?? 0,
-        actualAmount: result[idx].actualAmount ?? 0,
       }
     } else {
       // 新規: シートから追加
@@ -145,8 +146,6 @@ function upsertFromSheet(existing, incoming) {
         id: crypto.randomUUID(),
         priorityFlag: false,
         other: '',
-        expectedAmount: 0,
-        actualAmount: 0,
         lossReasonDetail: '',
         activityLog: [{ date: new Date().toISOString(), type: 'create', note: 'スプレッドシートから同期' }],
         ...row,
@@ -212,19 +211,40 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => loadCurrentUser())
   const [activeTab, setActiveTab] = useState('dashboard')
   const [proposalFilter, setProposalFilter] = useState(null)
+  const [teleapoFilter, setTeleapoFilter] = useState(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null) // null | { status:'loading'|'ok'|'error', time, count, message }
   const [deletedKeys, setDeletedKeys] = useState(() => loadDeletedKeys())
   const hasSyncedRef = useRef(false)
+  const hasSupabaseSyncedRef = useRef(false)
+  const prevProposalsRef = useRef(null)
+  const prevTeleapoRef = useRef(null)
+  const prevUsersRef = useRef(null)
+  const prevDownloadLeadsRef = useRef(null)
   const userMenuRef = useRef(null)
+  const [mountedTabs, setMountedTabs] = useState(() => new Set(['dashboard']))
+
+  // タブ切り替え（ブラウザ履歴に追加）
+  const switchTab = useCallback((tab) => {
+    setMountedTabs(prev => { const next = new Set(prev); next.add(tab); return next })
+    setActiveTab(tab)
+    window.history.pushState({ tab }, '')
+  }, [])
 
   // ダッシュボードからフィルタ付きで提案リストに遷移
   const navigateToProposals = (filter) => {
     setProposalFilter(filter)
-    setActiveTab('proposals')
+    switchTab('proposals')
+  }
+
+  // ダッシュボードからフィルタ付きでテレアポリストに遷移
+  const navigateToTeleapo = (filter) => {
+    setTeleapoFilter(filter)
+    switchTab('teleapo')
   }
   const [proposals, setProposals] = useState(() => migrateEmployeeScale(migrateKessaisha(removeInvalidStatuses(migrateIndustry(loadProposals())))))
   const [teleapoItems, setTeleapoItems] = useState(() => loadTeleapo())
+  const [downloadLeads, setDownloadLeads] = useState(() => loadDownloadLeads())
   const [settings, setSettings] = useState(() => loadSettings())
   const [performance, setPerformance] = useState(() => loadPerformance())
 
@@ -236,6 +256,117 @@ export default function App() {
   useEffect(() => { savePerformance(performance) }, [performance])
   useEffect(() => { saveDeletedKeys(deletedKeys) }, [deletedKeys])
 
+  // ── Supabase 起動時同期（ログイン後に1回だけ実行） ──────────────
+  useEffect(() => {
+    if (!currentUser || !isSupabaseEnabled || hasSupabaseSyncedRef.current) return
+    hasSupabaseSyncedRef.current = true
+
+    async function doStartupSync() {
+      try {
+        const [remoteProposals, remoteTeleapo, remoteUsers, remoteDownloads, remoteSettings] =
+          await Promise.all([
+            db.proposals.fetchAll(),
+            db.teleapoItems.fetchAll(),
+            db.users.fetchAll(),
+            db.downloadLeads.fetchAll(),
+            db.settings.get(),
+          ])
+
+        function mergeById(local, remote) {
+          if (!remote) return local
+          const remoteMap = new Map(remote.map(r => [r.id, r]))
+          const merged = local.map(item => remoteMap.has(item.id) ? remoteMap.get(item.id) : item)
+          const localIds = new Set(local.map(i => i.id))
+          remote.forEach(r => { if (!localIds.has(r.id)) merged.push(r) })
+          return merged
+        }
+
+        if (remoteProposals) setProposals(prev => mergeById(prev, remoteProposals))
+        if (remoteTeleapo) setTeleapoItems(prev => mergeById(prev, remoteTeleapo))
+        if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers)
+        if (remoteDownloads && remoteDownloads.length > 0) setDownloadLeads(remoteDownloads)
+        if (remoteSettings) setSettings(prev => ({ ...prev, ...remoteSettings }))
+      } catch (e) {
+        console.warn('[Supabase] 起動時同期エラー:', e.message)
+      }
+    }
+
+    doStartupSync()
+  }, [currentUser])
+
+  // ── Supabase へのデータ書き込み（変更検知 + 削除追跡） ──────────
+  useEffect(() => {
+    if (!isSupabaseEnabled) return
+    const prev = prevProposalsRef.current
+    prevProposalsRef.current = proposals
+    if (!prev) return  // 初回マウント時は書き込みしない
+    const timer = setTimeout(async () => {
+      if (proposals.length > 0) await db.proposals.upsert(proposals)
+      const currentIds = new Set(proposals.map(p => p.id))
+      const deletedIds = (prev || []).filter(p => !currentIds.has(p.id)).map(p => p.id)
+      if (deletedIds.length) await db.proposals.delete(deletedIds)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [proposals])
+
+  useEffect(() => {
+    if (!isSupabaseEnabled) return
+    const prev = prevTeleapoRef.current
+    prevTeleapoRef.current = teleapoItems
+    if (!prev) return
+    const timer = setTimeout(async () => {
+      if (teleapoItems.length > 0) await db.teleapoItems.upsert(teleapoItems)
+      const currentIds = new Set(teleapoItems.map(i => i.id))
+      const deletedIds = (prev || []).filter(i => !currentIds.has(i.id)).map(i => i.id)
+      if (deletedIds.length) await db.teleapoItems.delete(deletedIds)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [teleapoItems])
+
+  useEffect(() => {
+    if (!isSupabaseEnabled) return
+    const prev = prevUsersRef.current
+    prevUsersRef.current = users
+    if (!prev) return
+    const timer = setTimeout(async () => {
+      if (users.length > 0) await db.users.upsert(users)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [users])
+
+  useEffect(() => {
+    if (!isSupabaseEnabled) return
+    const prev = prevDownloadLeadsRef.current
+    prevDownloadLeadsRef.current = downloadLeads
+    if (!prev) return
+    const timer = setTimeout(async () => {
+      if (downloadLeads.length > 0) await db.downloadLeads.upsert(downloadLeads)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [downloadLeads])
+
+  useEffect(() => {
+    if (!isSupabaseEnabled) return
+    const timer = setTimeout(() => db.settings.set(settings), 1500)
+    return () => clearTimeout(timer)
+  }, [settings])
+
+  // ブラウザバック対応: 初期履歴を設定
+  useEffect(() => {
+    window.history.replaceState({ tab: 'dashboard' }, '')
+  }, [])
+
+  // ブラウザバック/フォワード時にタブを切り替え
+  useEffect(() => {
+    const handlePopState = (e) => {
+      const tab = e.state?.tab || 'dashboard'
+      setMountedTabs(prev => { const next = new Set(prev); next.add(tab); return next })
+      setActiveTab(tab)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
   // スプレッドシート自動同期
   const syncFromSheet = useCallback(async (url) => {
     if (!url) return
@@ -244,16 +375,45 @@ export default function App() {
       const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const rows = await res.json()
-      const currentDeletedKeys = loadDeletedKeys()
-      const mapped = rows.map(mapSheetRow).filter(r => {
-        if (!r.companyName) return false
-        // 削除済みの企業はスキップ
-        if (currentDeletedKeys.has(r.companyName)) return false
-        if (r._sheetRowIndex && currentDeletedKeys.has(`row:${r._sheetRowIndex}`)) return false
-        return true
+      // スプレッドシートが正 → シートにある企業を反映
+      // 「未提案」「アポ獲得不可」はシステムに取り込まない
+      const SKIP_STATUSES = ['未提案', 'アポ獲得不可']
+      const mapped = rows.map(mapSheetRow).filter(r =>
+        r.companyName && !SKIP_STATUSES.includes(r.status)
+      )
+      const incomingNames = new Set(mapped.map(r => r.companyName))
+      const validStatuses = ['アポ確定','担当者合意','決裁者アポ調整中','決裁者合意','受注','失注']
+      setProposals(prev => {
+        const upserted = upsertFromSheet(prev, mapped)
+        // シートにない企業名 or 不正ステータスの提案を削除（手動作成 = _sheetRowIndex なしは保持）
+        const after = upserted.filter(p => {
+          if (!p._sheetRowIndex) return true          // 手動作成は保持
+          if (!incomingNames.has(p.companyName)) {
+            console.log(`[sync] 削除（シートにない）: ${p.companyName}`)
+            return false
+          }
+          if (p.status && !validStatuses.includes(p.status)) {
+            console.log(`[sync] 削除（不正ステータス "${p.status}"）: ${p.companyName}`)
+            return false
+          }
+          return true
+        })
+        console.log(`[sync] 同期完了: ${mapped.length}件取得 / ${prev.length - after.length}件削除 / 計${after.length}件`)
+        return after
       })
-      setProposals(prev => upsertFromSheet(prev, mapped))
       setSyncStatus({ status: 'ok', time: new Date(), count: mapped.length })
+
+      // ダウンロード履歴も取得（GASが対応していれば）
+      try {
+        const dlRes = await fetch(url + '?type=downloads')
+        if (dlRes.ok) {
+          const dlData = await dlRes.json()
+          if (Array.isArray(dlData)) {
+            setDownloadLeads(dlData)
+            saveDownloadLeads(dlData)
+          }
+        }
+      } catch (_) { /* ダウンロード履歴未対応のGASは無視 */ }
     } catch (e) {
       setSyncStatus({ status: 'error', message: e.message, time: new Date() })
     }
@@ -310,8 +470,6 @@ export default function App() {
       lossReason: '',
       lossReasonDetail: '',
       notes: `テレアポより昇格。TEL: ${teleapoItem.phone}`,
-      expectedAmount: 0,
-      actualAmount: 0,
       activityLog: [{
         date: new Date().toISOString(),
         type: 'create',
@@ -319,7 +477,11 @@ export default function App() {
       }],
     }
     setProposals(prev => [...prev, newProposal])
-    setTeleapoItems(prev => prev.filter(i => i.id !== teleapoItem.id))
+    setTeleapoItems(prev => prev.map(i =>
+      i.id === teleapoItem.id
+        ? { ...i, status: 'アポ確定', isKept: false, keptBy: '', keptAt: '' }
+        : i
+    ))
   }
 
   // Show login screen if not logged in
@@ -341,7 +503,7 @@ export default function App() {
             {/* Logo */}
             <h1
               className="text-lg font-bold text-white shrink-0 cursor-pointer"
-              onClick={() => setActiveTab('dashboard')}
+              onClick={() => switchTab('dashboard')}
             >
               Sales Board
             </h1>
@@ -351,7 +513,7 @@ export default function App() {
               {TABS.map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => switchTab(tab.id)}
                   className={`px-3 py-2 text-[13px] font-medium rounded-t-lg whitespace-nowrap transition-colors ${
                     activeTab === tab.id
                       ? 'bg-white/15 text-white border-b-2 border-white'
@@ -367,7 +529,7 @@ export default function App() {
             <div className="ml-auto flex items-center gap-1 shrink-0">
               {/* Settings button */}
               <button
-                onClick={() => setActiveTab('settings')}
+                onClick={() => switchTab('settings')}
                 className={`p-2 rounded-lg transition-colors ${
                   activeTab === 'settings'
                     ? 'bg-white/15 text-white'
@@ -423,55 +585,67 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6">
-        {activeTab === 'dashboard' && <Dashboard proposals={proposals} teleapoItems={teleapoItems} onNavigate={navigateToProposals} users={users} />}
-        {activeTab === 'proposals' && (
-          <ProposalList
-            proposals={proposals}
-            setProposals={setProposals}
-            apiKey={settings.apiKey}
-            initialFilter={proposalFilter}
-            onFilterConsumed={() => setProposalFilter(null)}
-            users={users}
-            onDeleteProposals={(deleted) => {
-              setDeletedKeys(prev => {
-                const next = new Set(prev)
-                deleted.forEach(p => {
-                  if (p.companyName) next.add(p.companyName)
-                  if (p._sheetRowIndex) next.add(`row:${p._sheetRowIndex}`)
+        {/* 遅延マウント + CSS hidden でフィルター状態を保持 */}
+        {mountedTabs.has('dashboard') && (
+          <div className={activeTab !== 'dashboard' ? 'hidden' : ''}>
+            <Dashboard proposals={proposals} teleapoItems={teleapoItems} onNavigate={navigateToProposals} onNavigateTeleapo={navigateToTeleapo} users={users} />
+          </div>
+        )}
+        {mountedTabs.has('proposals') && (
+          <div className={activeTab !== 'proposals' ? 'hidden' : ''}>
+            <ProposalList
+              proposals={proposals}
+              setProposals={setProposals}
+              apiKey={settings.apiKey}
+              initialFilter={proposalFilter}
+              onFilterConsumed={() => setProposalFilter(null)}
+              users={users}
+              onDeleteProposals={(deleted) => {
+                setDeletedKeys(prev => {
+                  const next = new Set(prev)
+                  deleted.forEach(p => {
+                    if (p.companyName) next.add(p.companyName)
+                    if (p._sheetRowIndex) next.add(`row:${p._sheetRowIndex}`)
+                  })
+                  return next
                 })
-                return next
-              })
-            }}
-          />
+              }}
+            />
+          </div>
         )}
-        {activeTab === 'reps' && <SalesRepView proposals={proposals} users={users} />}
-        {activeTab === 'performance' && (
-          <PerformanceAnalysis
-            proposals={proposals}
-            performance={performance}
-            setPerformance={setPerformance}
-          />
+        {mountedTabs.has('reps') && (
+          <div className={activeTab !== 'reps' ? 'hidden' : ''}>
+            <SalesRepView proposals={proposals} users={users} />
+          </div>
         )}
-        {activeTab === 'teleapo' && (
-          <TeleapoList
-            items={teleapoItems}
-            setItems={setTeleapoItems}
-            onPromote={promoteToProposal}
-            proposals={proposals}
-            currentUser={currentUser}
-            users={users}
-          />
+        {mountedTabs.has('teleapo') && (
+          <div className={activeTab !== 'teleapo' ? 'hidden' : ''}>
+            <TeleapoList
+              items={teleapoItems}
+              setItems={setTeleapoItems}
+              onPromote={promoteToProposal}
+              proposals={proposals}
+              currentUser={currentUser}
+              users={users}
+              downloadLeads={downloadLeads}
+              settings={settings}
+              initialFilter={teleapoFilter}
+              onFilterConsumed={() => setTeleapoFilter(null)}
+            />
+          </div>
         )}
-        {activeTab === 'settings' && (
-          <Settings
-            settings={settings}
-            setSettings={setSettings}
-            users={users}
-            setUsers={setUsers}
-            currentUser={currentUser}
-            syncStatus={syncStatus}
-            onSync={() => syncFromSheet(settings.sheetSyncUrl)}
-          />
+        {mountedTabs.has('settings') && (
+          <div className={activeTab !== 'settings' ? 'hidden' : ''}>
+            <Settings
+              settings={settings}
+              setSettings={setSettings}
+              users={users}
+              setUsers={setUsers}
+              currentUser={currentUser}
+              syncStatus={syncStatus}
+              onSync={() => syncFromSheet(settings.sheetSyncUrl)}
+            />
+          </div>
         )}
       </main>
     </div>

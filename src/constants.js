@@ -66,8 +66,6 @@ export const CALL_RESULTS = [
   '担当者不在',
   '資料送付済',
   '折り返し依頼',
-  'ヒアリング済',
-  'アポ獲得',
   '断り',
 ]
 
@@ -86,6 +84,15 @@ export const TELEAPO_STATUS_COLORS = {
   '架電済': 'bg-sky-50 text-[#4a82ae]',
   '折り返し待ち': 'bg-amber-50 text-[#b45309]',
   'アポ確定': 'bg-teal-50 text-[#0f766e]',
+}
+
+export const EMAIL_STATUSES = ['未送信', '送信済み', '開封済み', 'クリック済み']
+
+export const EMAIL_STATUS_COLORS = {
+  '未送信': 'bg-slate-100 text-slate-400',
+  '送信済み': 'bg-blue-50 text-blue-600',
+  '開封済み': 'bg-amber-50 text-amber-700',
+  'クリック済み': 'bg-teal-50 text-[#0f766e]',
 }
 
 export const KANBAN_BORDER_COLORS = {
@@ -128,7 +135,5 @@ export const DEFAULT_PROPOSAL = {
   lossReason: '',
   lossReasonDetail: '',
   notes: '',
-  expectedAmount: 0,
-  actualAmount: 0,
   activityLog: [],
 }
