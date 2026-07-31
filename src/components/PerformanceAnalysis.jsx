@@ -360,7 +360,7 @@ export default function PerformanceAnalysis({ proposals, performance, setPerform
               <MultiSelect selected={selectedCompany} onChange={setSelectedCompany} options={wonCompanies} placeholder="全企業" />
               <MultiSelect selected={selectedIndustry} onChange={setSelectedIndustry} options={allIndustries} placeholder="全業種" />
               <MultiSelect selected={selectedScale} onChange={setSelectedScale} options={allScales} placeholder="全規模" />
-              <MultiSelect selected={selectedRelationship} onChange={setSelectedRelationship} options={allRelationships} placeholder="全関係性" />
+              <MultiSelect selected={selectedRelationship} onChange={setSelectedRelationship} options={allRelationships} placeholder="全チャネル" />
               <div className="flex items-center gap-1">
                 <span className="text-xs text-slate-500">期間:</span>
                 <input type="month" value={monthFrom} onChange={e => setMonthFrom(e.target.value)}
@@ -419,7 +419,7 @@ export default function PerformanceAnalysis({ proposals, performance, setPerform
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                   <h3 className="text-sm font-bold text-slate-700">クロス分析</h3>
                   <div className="flex bg-slate-100 rounded-lg p-0.5">
-                    {[{ key: 'industry', label: '業種別' }, { key: 'scale', label: '規模別' }, { key: 'relationship', label: '関係性別' }, { key: 'monthly', label: '月別推移' }].map(t => (
+                    {[{ key: 'industry', label: '業種別' }, { key: 'scale', label: '規模別' }, { key: 'relationship', label: 'チャネル別' }, { key: 'monthly', label: '月別推移' }].map(t => (
                       <button key={t.key} onClick={() => setCrossTab(t.key)}
                         className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${crossTab === t.key ? 'bg-white text-[#1a5285] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                         {t.label}
@@ -429,7 +429,7 @@ export default function PerformanceAnalysis({ proposals, performance, setPerform
                 </div>
                 {crossTab === 'industry' && <CrossTable data={crossByIndustry} keyLabel="業種" />}
                 {crossTab === 'scale' && <CrossTable data={crossByScale} keyLabel="規模" />}
-                {crossTab === 'relationship' && <CrossTable data={crossByRelationship} keyLabel="関係性" />}
+                {crossTab === 'relationship' && <CrossTable data={crossByRelationship} keyLabel="チャネル" />}
                 {crossTab === 'monthly' && <MonthlyTrend data={monthlyTrend} />}
               </div>
 
@@ -614,9 +614,9 @@ function LossAnalysis({ proposals }) {
 
       {/* フィルター */}
       <div className="bg-white rounded-lg shadow p-4 mb-4">
-        <p className="text-xs text-slate-500 mb-2">関係性・業種・規模で絞り込むと企業別の受注/失注が確認できます</p>
+        <p className="text-xs text-slate-500 mb-2">チャネル・業種・規模で絞り込むと企業別の受注/失注が確認できます</p>
         <div className="flex flex-wrap gap-2 items-center">
-          <MultiSelect selected={relFilter} onChange={setRelFilter} options={relOptions} placeholder="全関係性" />
+          <MultiSelect selected={relFilter} onChange={setRelFilter} options={relOptions} placeholder="全チャネル" />
           <MultiSelect selected={indFilter} onChange={setIndFilter} options={indOptions} placeholder="全業種" />
           <MultiSelect selected={scaleFilter} onChange={setScaleFilter} options={scaleOptions} placeholder="全規模" />
           <div className="flex items-center gap-1">
@@ -674,7 +674,7 @@ function LossAnalysis({ proposals }) {
               </div>
               <div className="flex bg-slate-100 rounded-lg p-0.5">
                 {[
-                  { key: 'relationship', label: '関係性別' },
+                  { key: 'relationship', label: 'チャネル別' },
                   { key: 'industry', label: '業種別' },
                   { key: 'scale', label: '規模別' },
                 ].map(t => (
@@ -714,7 +714,7 @@ function LossAnalysis({ proposals }) {
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">企業名</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">業種</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">従業員規模</th>
-                    <th className="px-2 py-2 text-left text-slate-500 font-medium">関係性</th>
+                    <th className="px-2 py-2 text-left text-slate-500 font-medium">チャネル</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">結果</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">失注理由</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">結論日</th>
@@ -786,7 +786,7 @@ function LossAnalysis({ proposals }) {
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">企業名</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">業種</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">従業員規模</th>
-                    <th className="px-2 py-2 text-left text-slate-500 font-medium">関係性</th>
+                    <th className="px-2 py-2 text-left text-slate-500 font-medium">チャネル</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">失注理由</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">詳細</th>
                     <th className="px-2 py-2 text-left text-slate-500 font-medium">結論日</th>

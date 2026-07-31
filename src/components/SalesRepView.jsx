@@ -146,7 +146,7 @@ export default function SalesRepView({ proposals, users = [] }) {
         .sort((a, b) => b.total - a.total)
     })()
 
-    // ─── 4. 関係性別の実績 ───
+    // ─── 4. チャネル別の実績 ───
     const byRelationship = (() => {
       const map = {}
       repProposals.forEach(p => {
@@ -352,10 +352,10 @@ export default function SalesRepView({ proposals, users = [] }) {
               </div>
             )}
 
-            {/* ─── 4. 関係性別の実績 ─── */}
+            {/* ─── 4. チャネル別の実績 ─── */}
             {selectedRepData.byRelationship.length > 0 && (
               <div className="bg-white rounded-lg shadow p-4">
-                <h4 className="text-sm font-bold text-slate-700 mb-1">関係性別実績</h4>
+                <h4 className="text-sm font-bold text-slate-700 mb-1">チャネル別実績</h4>
                 <p className="text-[10px] text-slate-400 mb-3">新規開拓力 vs 深耕力のバランス確認</p>
                 <div className="space-y-3">
                   {selectedRepData.byRelationship.map(d => {
@@ -473,7 +473,7 @@ export default function SalesRepView({ proposals, users = [] }) {
                     <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">企業名</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">業種</th>
                     <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">状況</th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">関係性</th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-slate-500">チャネル</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">

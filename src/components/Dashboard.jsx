@@ -373,7 +373,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   }, [filtered])
 
   const [revisitTab, setRevisitTab] = useState('byRep')
-  const [heatmapTab, setHeatmapTab] = useState('industry_relationship') // 'industry_relationship' | 'industry_scale' | 'relationship_scale'
+  const [heatmapTab, setHeatmapTab] = useState('industry_relationship')
+  const [appoMonth, setAppoMonth] = useState(null)
+  const [wonPopup, setWonPopup] = useState(null)
 
   // クロス集計ヒートマップデータ
   const heatmapData = useMemo(() => {
@@ -998,9 +1000,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   return (
     <div>
       {/* ダッシュボードモード切替 */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold text-slate-800">ダッシュボード</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3 shrink-0">
+          <h2 className="text-lg font-bold text-slate-800 whitespace-nowrap">ダッシュボード</h2>
           <div className="flex bg-slate-100 rounded-lg p-0.5">
             <button onClick={() => setDashboardMode('proposals')}
               className={`px-4 py-1.5 text-xs font-medium rounded-md transition-colors ${
@@ -1039,7 +1041,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               <MultiSelect label="業種" selected={selectedIndustry} onChange={setSelectedIndustry} options={industries} placeholder="全業種" />
             )}
             {relationships.length > 0 && (
-              <MultiSelect label="関係性" selected={selectedRelationship} onChange={setSelectedRelationship} options={relationships} placeholder="全関係性" />
+              <MultiSelect label="チャネル" selected={selectedRelationship} onChange={setSelectedRelationship} options={relationships} placeholder="全チャネル" />
             )}
             <label className="inline-flex items-center gap-1.5 cursor-pointer">
               <input type="checkbox" checked={decisionMakerFilter === 'yes'}
@@ -1827,13 +1829,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         <KpiCard label="進行中" value={stats.inProgress} suffix="件" color="amber" onClick={() => navigateWithFilters({ status: '進行中' })} />
         <KpiCard label="失注" value={stats.lost} suffix="件" color="red" onClick={() => navigateWithFilters({ status: '失注' })} />
       </div>
-      {/* Pipeline - Full Width */}
-      {funnelData.length > 0 && (
-        <ChartCard title="パイプライン">
-          <PipelineBar data={funnelData} onClickSegment={(status) => navigateWithFilters({ status })} />
-        </ChartCard>
-      )}
-
       {/* Monthly Trend - Full Width */}
       {monthlyData.length > 0 && (
         <ChartCard title="月別推移">
@@ -1902,6 +1897,166 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         </ChartCard>
       )}
 
+      {/* 月別アポ振り返り */}
+      {proposals.length > 0 && (() => {
+        const withDate = proposals.filter(p => p.initialDate)
+        const monthMap = {}
+        withDate.forEach(p => {
+          const m = p.initialDate.slice(0, 7)
+          if (!monthMap[m]) monthMap[m] = []
+          monthMap[m].push(p)
+        })
+        const months = Object.keys(monthMap).sort().reverse().slice(0, 12)
+        if (months.length === 0) return null
+        const selectedM = appoMonth && monthMap[appoMonth] ? appoMonth : months[0]
+        const monthProposals = monthMap[selectedM] || []
+
+        const chMap = {}
+        monthProposals.forEach(p => {
+          const k = p.relationship || '未設定'
+          if (!chMap[k]) chMap[k] = { total: 0, won: 0 }
+          chMap[k].total++
+          if (p.status === '受注') chMap[k].won++
+        })
+        const chRanked = Object.entries(chMap).sort((a, b) => b[1].total - a[1].total)
+        const chMax = chRanked[0]?.[1].total || 1
+
+        const inMap = {}
+        monthProposals.forEach(p => {
+          const k = p.industry || '未設定'
+          if (!inMap[k]) inMap[k] = { total: 0, won: 0 }
+          inMap[k].total++
+          if (p.status === '受注') inMap[k].won++
+        })
+        const inRanked = Object.entries(inMap).sort((a, b) => b[1].total - a[1].total)
+        const inMax = inRanked[0]?.[1].total || 1
+
+        const StackedBar = ({ total, won, max, loseColor, winColor, onClickWon }) => {
+          const lose = total - won
+          const barPct = Math.round((total / max) * 100)
+          return (
+            <div className="flex-1 bg-slate-100 rounded h-5 overflow-hidden">
+              <div className="h-full flex" style={{ width: `${barPct}%` }}>
+                {lose > 0 && (
+                  <div className="h-full flex items-center overflow-hidden whitespace-nowrap px-2 text-xs font-medium"
+                    style={{ flex: lose, background: loseColor, color: '#fff', minWidth: 4 }}>
+                    {total}件
+                  </div>
+                )}
+                {won > 0 && (
+                  <div className="h-full cursor-pointer hover:opacity-80"
+                    style={{ flex: won, background: winColor, minWidth: 4 }}
+                    onClick={onClickWon} />
+                )}
+              </div>
+            </div>
+          )
+        }
+
+        return (
+          <>
+            <div className="bg-white rounded-lg shadow p-5 mb-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-slate-700">月別アポ振り返り</h3>
+                <div className="flex items-center gap-3 text-xs text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#aecde3' }}></span>未受注
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded-sm" style={{ background: '#2d6a9e' }}></span>受注
+                  </span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5 mb-5">
+                {months.map(m => {
+                  const label = m.replace(/^(\d{4})-(\d{2})$/, (_, y, mo) => `${y}/${mo}`)
+                  const cnt = monthMap[m].length
+                  return (
+                    <button key={m} onClick={() => { setAppoMonth(m); setWonPopup(null) }}
+                      className={`px-3 py-1 text-xs rounded-md border transition-colors ${
+                        m === selectedM
+                          ? 'bg-[#2d6a9e] text-white border-[#2d6a9e]'
+                          : 'bg-white text-slate-600 border-slate-200 hover:border-[#2d6a9e] hover:text-[#2d6a9e]'
+                      }`}>
+                      {label}<span className="ml-1.5 opacity-60">{cnt}件</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="text-xs font-medium text-slate-500 w-[90px] shrink-0">チャネル別</div>
+                    <div className="flex-1" />
+                    <div className="text-xs font-medium w-8 shrink-0 text-right" style={{ color: '#2d6a9e' }}>受注</div>
+                  </div>
+                  <div className="space-y-2">
+                    {chRanked.map(([ch, { total, won }]) => {
+                      const wonCompanies = monthProposals.filter(p => (p.relationship || '未設定') === ch && p.status === '受注')
+                      return (
+                        <div key={ch} className="flex items-center gap-2">
+                          <div className="text-xs text-slate-600 w-[90px] shrink-0 truncate" title={ch}>{ch}</div>
+                          <StackedBar total={total} won={won} max={chMax} loseColor="#aecde3" winColor="#2d6a9e"
+                            onClickWon={() => setWonPopup({ title: `${ch} の受注企業`, companies: wonCompanies })} />
+                          <div className="text-xs w-8 shrink-0 text-right font-medium"
+                            style={{ color: won > 0 ? '#2d6a9e' : '#e2e8f0', cursor: won > 0 ? 'pointer' : 'default' }}
+                            onClick={won > 0 ? () => setWonPopup({ title: `${ch} の受注企業`, companies: wonCompanies }) : undefined}>
+                            {won > 0 ? won : '-'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="text-xs font-medium text-slate-500 w-[90px] shrink-0">業種別</div>
+                    <div className="flex-1" />
+                    <div className="text-xs font-medium w-8 shrink-0 text-right" style={{ color: '#0f6e56' }}>受注</div>
+                  </div>
+                  <div className="space-y-2">
+                    {inRanked.map(([ind, { total, won }]) => {
+                      const wonCompanies = monthProposals.filter(p => (p.industry || '未設定') === ind && p.status === '受注')
+                      return (
+                        <div key={ind} className="flex items-center gap-2">
+                          <div className="text-xs text-slate-600 w-[90px] shrink-0 truncate" title={ind}>{ind}</div>
+                          <StackedBar total={total} won={won} max={inMax} loseColor="#9fd4c2" winColor="#0f6e56"
+                            onClickWon={() => setWonPopup({ title: `${ind} の受注企業`, companies: wonCompanies })} />
+                          <div className="text-xs w-8 shrink-0 text-right font-medium"
+                            style={{ color: won > 0 ? '#0f6e56' : '#e2e8f0', cursor: won > 0 ? 'pointer' : 'default' }}
+                            onClick={won > 0 ? () => setWonPopup({ title: `${ind} の受注企業`, companies: wonCompanies }) : undefined}>
+                            {won > 0 ? won : '-'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {wonPopup && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setWonPopup(null)}>
+                <div className="bg-white rounded-xl shadow-xl p-6 w-80 max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-sm font-bold text-slate-700">{wonPopup.title}</h4>
+                    <button className="text-slate-400 hover:text-slate-600 text-lg leading-none" onClick={() => setWonPopup(null)}>×</button>
+                  </div>
+                  <div className="overflow-y-auto space-y-2">
+                    {wonPopup.companies.map((p, i) => (
+                      <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
+                        <span className="text-sm text-slate-700">{p.companyName || '(社名なし)'}</span>
+                        <span className="text-xs text-slate-400">{p.salesRep}</span>
+                      </div>
+                    ))}
+                    {wonPopup.companies.length === 0 && <p className="text-sm text-slate-400">データなし</p>}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )
+      })()}
+
       {/* Analysis Charts - 2 Column Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4 items-start">
         {(() => {
@@ -1911,7 +2066,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
           const chartH = Math.max(180, maxRows * 38)
           return (<>
             {relationshipData.length > 0 && (
-              <ChartCard title="関係性別受注率" sub="Wilson Score順（件数×率を加味）">
+              <ChartCard title="チャネル別受注率" sub="Wilson Score順（件数×率を加味）">
                 <ResponsiveContainer width="100%" height={chartH}>
                   <BarChart data={relationshipData} layout="vertical" margin={{ left: 0, right: 40 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1994,81 +2149,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         )}
       </div>
 
-      {/* クロス集計ヒートマップ */}
-      {filtered.filter(p => p.status !== 'アポ確定').length > 0 && (
-      <div className="bg-white rounded-lg shadow p-5 mb-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-          <h3 className="text-sm font-bold text-slate-700">クロス集計ヒートマップ<span className="text-xs font-normal text-slate-400 ml-2">受注率（提案数）</span></h3>
-          <div className="flex bg-slate-100 rounded-lg p-0.5">
-            {[
-              { key: 'industry_relationship', label: '業種×関係性' },
-              { key: 'industry_scale', label: '業種×規模' },
-              { key: 'relationship_scale', label: '関係性×規模' },
-            ].map(t => (
-              <button key={t.key} onClick={() => setHeatmapTab(t.key)}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${heatmapTab === t.key ? 'bg-white text-[#1a5285] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {(() => {
-          const data = heatmapData[heatmapTab]
-          if (!data || data.matrix.length === 0) return <p className="text-sm text-slate-400 text-center py-4">データなし</p>
-
-          // 全セルのrate最大値を取得（色の基準）
-          const allRates = data.matrix.flatMap(r => r.cells.map(c => c.rate)).filter(r => r !== null)
-          const maxRate = Math.max(...allRates, 1)
-          const hmKeys = HEATMAP_KEYS[heatmapTab]
-
-          return (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr>
-                    <th className="sticky left-0 bg-white z-10 text-left px-2 py-2 text-slate-500 font-medium border-b border-slate-200 min-w-[100px]"></th>
-                    {data.cols.map(col => (
-                      <th key={col} className="px-2 py-2 text-center text-slate-600 font-medium border-b border-slate-200 whitespace-nowrap min-w-[70px]">
-                        {col.length > 6 ? col.slice(0, 6) + '…' : col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.matrix.map((row) => (
-                    <tr key={row.row}>
-                      <td className="sticky left-0 bg-white z-10 px-2 py-2 text-slate-700 font-medium border-b border-slate-100 whitespace-nowrap">
-                        {row.row.length > 8 ? row.row.slice(0, 8) + '…' : row.row}
-                      </td>
-                      {row.cells.map((cell) => {
-                        if (cell.total === 0) {
-                          return <td key={cell.col} className="px-2 py-2 text-center border-b border-slate-100 text-slate-300">-</td>
-                        }
-                        const intensity = cell.rate / maxRate
-                        const bgColor = cell.rate > 0
-                          ? `rgba(26, 82, 133, ${0.08 + intensity * 0.55})`
-                          : 'rgba(226, 232, 240, 0.3)'
-                        const textColor = intensity > 0.5 ? '#fff' : '#334155'
-                        return (
-                          <td key={cell.col}
-                            className="px-2 py-2 text-center border-b border-slate-100 cursor-pointer hover:opacity-80 transition-opacity"
-                            style={{ backgroundColor: bgColor, color: textColor }}
-                            title={`${row.row} × ${cell.col}\n受注率: ${cell.rate}%（受注${cell.won}件 / 提案${cell.total}件）`}
-                            onClick={() => navigateWithFilters({ [hmKeys.row]: row.row, [hmKeys.col]: cell.col })}>
-                            <div className="font-bold leading-tight">{cell.rate}%</div>
-                            <div className="text-[10px] leading-tight" style={{ opacity: 0.75 }}>({cell.total})</div>
-                          </td>
-                        )
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        })()}
-      </div>
-      )}
 
       {/* 決裁者アポ取得率分析 - 2カラムレイアウト */}
       <div className="bg-white rounded-lg shadow p-5 mb-4">
@@ -2117,7 +2197,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               {[
                 { id: 'byRep', label: '担当別' },
                 { id: 'byIndustry', label: '業種別' },
-                { id: 'byRelationship', label: '関係性別' },
+                { id: 'byRelationship', label: 'チャネル別' },
                 { id: 'byScale', label: '規模別' },
                 { id: 'byMonth', label: '月別' },
               ].map(t => (

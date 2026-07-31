@@ -20,6 +20,7 @@ const TABS = [
 // ========== スプレッドシート同期 ==========
 const SHEET_COL_MAP = {
   '初回提案日時': 'initialDate',
+  '初回アポ日': 'initialDate',
   '企業名': 'companyName',
   '営業担当': 'salesRep',
   '担当者': 'contactName',

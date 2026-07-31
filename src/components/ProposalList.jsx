@@ -6,7 +6,7 @@ import KanbanBoard from './KanbanBoard'
 import MultiSelect from './MultiSelect'
 
 function exportCsv(proposals) {
-  const headers = ['初回提案日時','企業名','営業担当','担当者','業種','従業員規模','優先フラグ','その他','役職','提案状況','決裁者アポ日','結論日','関係性','失注理由','失注理由詳細','備考']
+  const headers = ['初回提案日時','企業名','営業担当','担当者','業種','従業員規模','優先フラグ','その他','役職','提案状況','決裁者アポ日','結論日','チャネル','失注理由','失注理由詳細','備考']
   const rows = proposals.map(p => [
     p.initialDate, p.companyName, p.salesRep, p.contactName, p.industry, p.employeeScale,
     p.priorityFlag ? '○' : '', p.other, p.position, p.status,
@@ -226,7 +226,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
 
   const BULK_FIELDS = [
     { key: 'industry', label: '業種', options: INDUSTRIES },
-    { key: 'relationship', label: '関係性', options: RELATIONSHIPS },
+    { key: 'relationship', label: 'チャネル', options: RELATIONSHIPS },
     { key: 'status', label: 'ステータス', options: PROPOSAL_STATUSES },
   ]
 
@@ -306,7 +306,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       <div className="flex flex-wrap gap-2 mb-4">
         <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="全業種" />
         <MultiSelect selected={filters.status} onChange={v => setFilter('status', v)} options={PROPOSAL_STATUSES} placeholder="全状況" />
-        <MultiSelect selected={filters.relationship} onChange={v => setFilter('relationship', v)} options={RELATIONSHIPS} placeholder="全関係性" />
+        <MultiSelect selected={filters.relationship} onChange={v => setFilter('relationship', v)} options={RELATIONSHIPS} placeholder="全チャネル" />
         <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="全営業" />
         <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="全規模" />
         <select value={filters.priority} onChange={e => setFilter('priority', e.target.value)}
@@ -411,7 +411,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">担当者</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">役職</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">状況</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">関係性</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">チャネル</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">決裁者アポ</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-slate-500 uppercase whitespace-nowrap">操作</th>
                 </tr>

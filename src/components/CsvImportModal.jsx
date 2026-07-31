@@ -14,7 +14,7 @@ const APP_FIELDS = [
   { key: 'status', label: '提案状況', type: 'select', options: PROPOSAL_STATUSES },
   { key: 'decisionMakerDate', label: '決裁者アポ日', type: 'date' },
   { key: 'conclusionDate', label: '結論日', type: 'date' },
-  { key: 'relationship', label: '関係性', type: 'select', options: RELATIONSHIPS },
+  { key: 'relationship', label: 'チャネル', type: 'select', options: RELATIONSHIPS },
   { key: 'lossReason', label: '失注理由', type: 'select', options: LOSS_REASONS },
   { key: 'lossReasonDetail', label: '失注理由詳細', type: 'text' },
   { key: 'notes', label: '備考', type: 'text' },
@@ -33,7 +33,7 @@ function autoMap(csvHeaders) {
   // Aliases
   const aliases = {
     '会社名': 'companyName', '社名': 'companyName', '企業': 'companyName',
-    '日付': 'initialDate', '提案日': 'initialDate', '初回提案日': 'initialDate',
+    '日付': 'initialDate', '提案日': 'initialDate', '初回提案日': 'initialDate', '初回アポ日': 'initialDate',
     'ステータス': 'status', '状況': 'status', '進捗': 'status',
     '規模': 'employeeScale', '社員数': 'employeeScale', '従業員数': 'employeeScale',
     '優先': 'priorityFlag', 'フラグ': 'priorityFlag',
@@ -443,7 +443,7 @@ export default function CsvImportModal({ onImport, onClose, existingProposals = 
                       <th className="px-2 py-1 text-left">営業担当</th>
                       <th className="px-2 py-1 text-left">担当者</th>
                       <th className="px-2 py-1 text-left">状況</th>
-                      <th className="px-2 py-1 text-left">関係性</th>
+                      <th className="px-2 py-1 text-left">チャネル</th>
                       <th className="px-2 py-1 text-left">日付</th>
                     </tr>
                   </thead>

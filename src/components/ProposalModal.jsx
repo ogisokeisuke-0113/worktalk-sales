@@ -247,7 +247,7 @@ JSONのみ出力してください。`
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">関係性</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">チャネル</label>
                   <select value={form.relationship} onChange={e => set('relationship', e.target.value)}
                     className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     {RELATIONSHIPS.map(r => <option key={r} value={r}>{r}</option>)}
