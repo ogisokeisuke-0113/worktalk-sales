@@ -8,6 +8,55 @@ import { useConfirm } from './ConfirmDialog'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]'
 
+// 電話番号を URL scheme 用にサニタイズ（ハイフン/括弧/空白を除去）
+// zoomphonecall:// は E.164 に近い数値のみが期待されるため
+function normalizePhoneForScheme(phone) {
+  return String(phone || '').replace(/[-\s()（）]/g, '')
+}
+
+// Zoom Phone 発信URL
+// - スキーム: zoomphonecall://<phone>
+// - Zoom Phone がインストールされていれば発信、なければブラウザで何も起きない
+function zoomPhoneUrl(phone) {
+  const digits = normalizePhoneForScheme(phone)
+  return digits ? `zoomphonecall://${digits}` : '#'
+}
+
+// 引き継ぎ書仕様の架電優先スター (0〜3)
+// - DL済み or クリック済み → ★★★（最高優先）
+// - 開封済み → ★★（高優先）
+// - 送信済み → ★（通常）
+// - 未送信 → 星なし（低優先）
+// カードや詳細で一目で優先度が分かるように使う。ソート用のスコアは calcPriorityScore を継続利用
+function getPriorityStars(item, downloadLeads = []) {
+  const companyLower = (item.companyName || '').trim().toLowerCase()
+  const isDownloaded = !!companyLower && downloadLeads.some(l => (l.companyName || '').trim().toLowerCase() === companyLower)
+  if (isDownloaded) return { stars: 3, label: '最高優先 (DL済)', color: 'text-rose-500', bg: 'bg-rose-50 border-rose-200 text-rose-600' }
+  if (item.emailStatus === 'クリック済み') return { stars: 3, label: '最高優先 (クリック済)', color: 'text-rose-500', bg: 'bg-rose-50 border-rose-200 text-rose-600' }
+  if (item.emailStatus === '開封済み') return { stars: 2, label: '高優先 (開封済)', color: 'text-amber-500', bg: 'bg-amber-50 border-amber-200 text-amber-700' }
+  if (item.emailStatus === '送信済み') return { stars: 1, label: '通常 (送信済)', color: 'text-sky-500', bg: 'bg-sky-50 border-sky-200 text-sky-600' }
+  return { stars: 0, label: '低優先 (未送信)', color: 'text-slate-300', bg: 'bg-slate-50 border-slate-200 text-slate-400' }
+}
+
+// 星バッジ（0-3を ★★★ で表示 + ツールチップにラベル）
+function PriorityStars({ item, downloadLeads = [], compact = false }) {
+  const meta = getPriorityStars(item, downloadLeads)
+  if (meta.stars === 0 && compact) return null // カードでは0のとき非表示
+  const filled = '★'.repeat(meta.stars)
+  const empty = '☆'.repeat(3 - meta.stars)
+  return (
+    <span
+      title={meta.label}
+      className={`inline-flex items-center gap-1 tracking-wider font-bold ${compact ? 'text-xs' : 'text-sm'} ${meta.color}`}
+    >
+      <span aria-label={`優先度 ${meta.stars} of 3`}>
+        <span>{filled}</span>
+        <span className="text-slate-300">{empty}</span>
+      </span>
+    </span>
+  )
+}
+
 // 架電優先スコア（0〜3）: 採用広告費 × 従業員増加数 × DL有無
 // Keepが当日中有効かチェック（JST基準）
 function isKeepActive(item) {
@@ -265,7 +314,7 @@ function CallRecordModal({ onSave, onClose }) {
 }
 
 /* ───────────────────── 詳細パネル ───────────────────── */
-function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, currentUser }) {
+function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, currentUser, downloadLeads = [] }) {
   const confirm = useConfirm()
   const [showCallModal, setShowCallModal] = useState(false)
   const callCount = (item.callHistory || []).length
@@ -314,6 +363,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-lg font-bold text-slate-800">{item.companyName}</h3>
+              <PriorityStars item={item} downloadLeads={downloadLeads} />
               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                 {item.status}
               </span>
@@ -383,17 +433,57 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
           {(item.recruitmentPhone || item.phone) && (
             <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-3">
               {item.recruitmentPhone && (
-                <div className="mb-2">
-                  <p className="text-[10px] text-[#0f766e] font-bold">採用電話番号（直通）</p>
-                  <a href={`tel:${item.recruitmentPhone}`} className="text-base font-bold text-[#0f766e] hover:underline">
-                    {item.recruitmentPhone}
-                  </a>
+                <div className="mb-2 flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <p className="text-[10px] text-[#0f766e] font-bold">採用電話番号（直通）</p>
+                    <a href={`tel:${item.recruitmentPhone}`} className="text-base font-bold text-[#0f766e] hover:underline">
+                      {item.recruitmentPhone}
+                    </a>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <a
+                      href={zoomPhoneUrl(item.recruitmentPhone)}
+                      title="Zoom Phone で発信"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#2D8CFF] text-white text-xs font-medium hover:bg-[#1c73d1] transition-colors"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 6.5A2.5 2.5 0 015.5 4h9A2.5 2.5 0 0117 6.5v11A2.5 2.5 0 0114.5 20h-9A2.5 2.5 0 013 17.5v-11zM19 8l3-2v12l-3-2V8z" />
+                      </svg>
+                      Zoom
+                    </a>
+                    <a
+                      href={`tel:${item.recruitmentPhone}`}
+                      className="inline-flex items-center px-2.5 py-1.5 rounded-md bg-[#0f766e] text-white text-xs font-medium hover:bg-[#0a5c56] transition-colors"
+                    >
+                      架電
+                    </a>
+                  </div>
                 </div>
               )}
               {item.phone && (
-                <div className={item.recruitmentPhone ? 'border-t border-teal-100 pt-2' : ''}>
-                  <p className="text-[10px] text-slate-400 font-medium">代表電話番号</p>
-                  <a href={`tel:${item.phone}`} className="text-sm text-slate-600 hover:underline">{item.phone}</a>
+                <div className={`flex items-center justify-between gap-2 flex-wrap ${item.recruitmentPhone ? 'border-t border-teal-100 pt-2' : ''}`}>
+                  <div>
+                    <p className="text-[10px] text-slate-400 font-medium">代表電話番号</p>
+                    <a href={`tel:${item.phone}`} className="text-sm text-slate-600 hover:underline">{item.phone}</a>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <a
+                      href={zoomPhoneUrl(item.phone)}
+                      title="Zoom Phone で発信"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#2D8CFF] text-white text-xs font-medium hover:bg-[#1c73d1] transition-colors"
+                    >
+                      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 6.5A2.5 2.5 0 015.5 4h9A2.5 2.5 0 0117 6.5v11A2.5 2.5 0 0114.5 20h-9A2.5 2.5 0 013 17.5v-11zM19 8l3-2v12l-3-2V8z" />
+                      </svg>
+                      Zoom
+                    </a>
+                    <a
+                      href={`tel:${item.phone}`}
+                      className="inline-flex items-center px-2.5 py-1.5 rounded-md bg-slate-600 text-white text-xs font-medium hover:bg-slate-700 transition-colors"
+                    >
+                      架電
+                    </a>
+                  </div>
                 </div>
               )}
             </div>
@@ -1179,6 +1269,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                   {item.status}
                 </span>
+                <PriorityStars item={item} downloadLeads={downloadLeads} compact />
                 {priority > 0 && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PRIORITY_COLORS[priority]}`}>
                     優先 {PRIORITY_LABELS[priority]}
@@ -1232,10 +1323,24 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                     )}
                   </div>
                   {!isOtherKeep && (
-                    <a href={`tel:${phone}`}
-                      className="flex-shrink-0 px-5 py-2 rounded-full bg-[#2d6a9e] text-white text-sm font-medium hover:bg-[#1a5285] transition-colors">
-                      架電
-                    </a>
+                    <div className="flex-shrink-0 flex items-center gap-1.5">
+                      <a
+                        href={zoomPhoneUrl(phone)}
+                        title="Zoom Phone で発信"
+                        className="inline-flex items-center gap-1 px-3 py-2 rounded-full bg-[#2D8CFF] text-white text-xs font-medium hover:bg-[#1c73d1] transition-colors"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M3 6.5A2.5 2.5 0 015.5 4h9A2.5 2.5 0 0117 6.5v11A2.5 2.5 0 0114.5 20h-9A2.5 2.5 0 013 17.5v-11zM19 8l3-2v12l-3-2V8z" />
+                        </svg>
+                        Zoom
+                      </a>
+                      <a
+                        href={`tel:${phone}`}
+                        className="inline-flex items-center px-4 py-2 rounded-full bg-[#2d6a9e] text-white text-sm font-medium hover:bg-[#1a5285] transition-colors"
+                      >
+                        架電
+                      </a>
+                    </div>
                   )}
                 </div>
               )}
@@ -1776,6 +1881,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           onPromote={handlePromote}
           onDelete={handleDelete}
           currentUser={currentUser}
+          downloadLeads={downloadLeads}
         />
       )}
 
