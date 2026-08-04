@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useToast } from './Toast'
+import { useConfirm } from './ConfirmDialog'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
 
@@ -29,6 +31,8 @@ function TemplateEditor({ template, onSave, onCancel }) {
 }
 
 export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync }) {
+  const { showToast } = useToast()
+  const confirm = useConfirm()
   const [newUserName, setNewUserName] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
   const [userError, setUserError] = useState('')
@@ -48,12 +52,20 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
     setTimeout(() => setUserSuccess(''), 2000)
   }
 
-  const handleDeleteUser = (userId) => {
+  const handleDeleteUser = async (userId) => {
     if (userId === currentUser?.id) return
     const user = users.find(u => u.id === userId)
-    if (confirm(`${user.name} を削除しますか？`)) {
-      setUsers(prev => prev.filter(u => u.id !== userId))
-    }
+    if (!user) return
+    const ok = await confirm({
+      title: 'ユーザーを削除',
+      message: `${user.name} を削除します。よろしいですか？`,
+      confirmText: '削除',
+      cancelText: 'キャンセル',
+      variant: 'danger',
+    })
+    if (!ok) return
+    setUsers(prev => prev.filter(u => u.id !== userId))
+    showToast(`${user.name} を削除しました`, 'success')
   }
 
   const [urlInput, setUrlInput] = useState(settings.sheetSyncUrl || '')
@@ -93,10 +105,22 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
       : templates.map(t => t.id === form.id ? form : t)
     setSettings(prev => ({ ...prev, emailTemplates: updated }))
     setEditingTemplate(null)
+    showToast(isNew ? 'テンプレートを追加しました' : 'テンプレートを更新しました', 'success')
   }
-  const handleDeleteTemplate = (id) => {
-    if (!confirm('このテンプレートを削除しますか？')) return
+  const handleDeleteTemplate = async (id) => {
+    const target = templates.find(t => t.id === id)
+    const ok = await confirm({
+      title: 'テンプレートを削除',
+      message: target?.name
+        ? `「${target.name}」を削除します。よろしいですか？`
+        : 'このテンプレートを削除します。よろしいですか？',
+      confirmText: '削除',
+      cancelText: 'キャンセル',
+      variant: 'danger',
+    })
+    if (!ok) return
     setSettings(prev => ({ ...prev, emailTemplates: (prev.emailTemplates || []).filter(t => t.id !== id) }))
+    showToast('テンプレートを削除しました', 'success')
   }
 
   return (

@@ -9,6 +9,7 @@ import SalesRepView from './components/SalesRepView'
 import TeleapoList from './components/TeleapoList'
 import Settings from './components/Settings'
 import LoginScreen from './components/LoginScreen'
+import { useToast } from './components/Toast'
 
 const TABS = [
   { id: 'dashboard', label: 'ダッシュボード' },
@@ -208,6 +209,7 @@ function migrateKessaisha(proposals) {
 }
 
 export default function App() {
+  const { showToast } = useToast()
   const [users, setUsers] = useState(() => loadUsers())
   const [currentUser, setCurrentUser] = useState(() => loadCurrentUser())
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -403,6 +405,7 @@ export default function App() {
         return after
       })
       setSyncStatus({ status: 'ok', time: new Date(), count: mapped.length })
+      showToast(`スプレッドシートを同期しました（${mapped.length}件）`, 'success')
 
       // ダウンロード履歴も取得（GASが対応していれば）
       try {
@@ -417,8 +420,9 @@ export default function App() {
       } catch (_) { /* ダウンロード履歴未対応のGASは無視 */ }
     } catch (e) {
       setSyncStatus({ status: 'error', message: e.message, time: new Date() })
+      showToast(`同期エラー: ${e.message}`, 'error', 5000)
     }
-  }, [])
+  }, [showToast])
 
   // ログイン後に一度だけ自動同期
   useEffect(() => {

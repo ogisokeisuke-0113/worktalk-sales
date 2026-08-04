@@ -6,6 +6,7 @@ import {
   ComposedChart, Line,
 } from 'recharts'
 import { FUNNEL_COLORS, EMPLOYEE_SCALES } from '../constants'
+import EmptyState from './EmptyState'
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
@@ -990,9 +991,28 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
 
   if (proposals.length === 0 && teleapoItems.length === 0) {
     return (
-      <div className="text-center py-20 text-slate-400">
-        <p className="text-lg mb-2">データがありません</p>
-        <p className="text-sm">提案リストまたはテレアポリストからデータを追加してください</p>
+      <div className="bg-white rounded-lg shadow">
+        <EmptyState
+          variant="chart"
+          title="ダッシュボードに表示するデータがありません"
+          message={"提案リストまたはテレアポリストから\nデータを追加すると、ここに集計グラフが表示されます"}
+          action={
+            <div className="flex flex-wrap gap-2 justify-center">
+              <button
+                onClick={() => onNavigate?.({})}
+                className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors"
+              >
+                提案リストへ
+              </button>
+              <button
+                onClick={() => onNavigateTeleapo?.({})}
+                className="px-4 py-2 bg-[#0f766e] text-white text-sm rounded-md hover:bg-[#0a5c56] transition-colors"
+              >
+                テレアポリストへ
+              </button>
+            </div>
+          }
+        />
       </div>
     )
   }

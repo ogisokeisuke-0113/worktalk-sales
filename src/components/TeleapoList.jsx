@@ -2,6 +2,9 @@ import { useState, useMemo, useEffect } from 'react'
 import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, EMAIL_STATUSES, EMAIL_STATUS_COLORS } from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
+import EmptyState from './EmptyState'
+import { useToast } from './Toast'
+import { useConfirm } from './ConfirmDialog'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]'
 
@@ -263,6 +266,7 @@ function CallRecordModal({ onSave, onClose }) {
 
 /* ───────────────────── 詳細パネル ───────────────────── */
 function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, currentUser }) {
+  const confirm = useConfirm()
   const [showCallModal, setShowCallModal] = useState(false)
   const callCount = (item.callHistory || []).length
 
@@ -354,7 +358,19 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
               className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#0f766e] text-white hover:bg-[#0a5c56]">
               アポ確定
             </button>
-            <button onClick={() => { if (confirm('削除しますか？')) onDelete(item.id) }}
+            <button
+              onClick={async () => {
+                const ok = await confirm({
+                  title: '企業を削除',
+                  message: item.companyName
+                    ? `「${item.companyName}」を削除します。よろしいですか？`
+                    : 'この企業を削除します。よろしいですか？',
+                  confirmText: '削除',
+                  cancelText: 'キャンセル',
+                  variant: 'danger',
+                })
+                if (ok) onDelete(item.id)
+              }}
               className="px-3 py-1.5 text-xs font-medium rounded-md text-[#be123c] border border-rose-200 hover:bg-rose-50 ml-auto">
               削除
             </button>
@@ -525,7 +541,32 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
         </div>
       </div>
 
-      {/* 検索カード */}
+      {/* 空状態: まだ企業がない場合は検索フォームを出さずに案内 */}
+      {stats.total === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+          <EmptyState
+            variant="calls"
+            title="まだテレアポ対象企業がありません"
+            message={"CSVインポートまたは新規追加で\nテレアポ対象企業を登録してください"}
+            action={
+              <div className="flex flex-wrap gap-2 justify-center">
+                <button
+                  onClick={onCsvImport}
+                  className="px-4 py-2 text-sm text-[#2d6a9e] bg-white border border-[#2d6a9e] rounded-md hover:bg-sky-50 transition-colors"
+                >
+                  CSVインポート
+                </button>
+                <button
+                  onClick={onAddNew}
+                  className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors"
+                >
+                  + 新規追加
+                </button>
+              </div>
+            }
+          />
+        </div>
+      ) : (
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
         <h3 className="text-base font-bold text-slate-700 mb-5">絞り込み検索</h3>
 
@@ -639,6 +680,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }
@@ -1422,6 +1464,8 @@ function DownloadLeads({ leads = [], teleapoItems = [], proposedNames = new Set(
 
 /* ───────────────────── メインコンポーネント ───────────────────── */
 export default function TeleapoList({ items, setItems, onPromote, proposals = [], currentUser, users = [], downloadLeads = [], settings = {}, initialFilter, onFilterConsumed }) {
+  const { showToast } = useToast()
+  const confirm = useConfirm()
   const [subTab, setSubTab] = useState('list') // 'list' | 'downloads'
   const [page, setPage] = useState('search') // 'search' | 'results'
   const [showModal, setShowModal] = useState(false)
@@ -1549,12 +1593,17 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     })
   }, [items, filters, searchText])
 
-  const handleSave = (item) => {
+  const handleSave = async (item) => {
     const isNew = !items.some(i => i.id === item.id)
     if (isNew) {
       const name = (item.companyName || '').trim().toLowerCase()
       if (name && proposedNames.has(name)) {
-        const ok = window.confirm(`「${item.companyName}」はすでに提案リストに登録されています。\nテレアポリストにも追加しますか？`)
+        const ok = await confirm({
+          title: '提案リストに既登録',
+          message: `「${item.companyName}」はすでに提案リストに登録されています。\nテレアポリストにも追加しますか？`,
+          confirmText: '追加する',
+          cancelText: 'キャンセル',
+        })
         if (!ok) return
       }
     }
@@ -1569,6 +1618,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     })
     setShowModal(false)
     setEditItem(null)
+    showToast(isNew ? '企業を追加しました' : '企業情報を更新しました', 'success')
   }
 
   const handleUpdate = (updated) => {
@@ -1577,8 +1627,10 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }
 
   const handleDelete = (id) => {
+    const target = items.find(i => i.id === id)
     setItems(prev => prev.filter(i => i.id !== id))
     setSelectedItem(null)
+    showToast(target?.companyName ? `「${target.companyName}」を削除しました` : '削除しました', 'success')
   }
 
   const handlePromote = (item) => {
@@ -1586,6 +1638,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
     onPromote(updated)
     setSelectedItem(null)
+    showToast(item.companyName ? `「${item.companyName}」をアポ確定にしました` : 'アポ確定にしました', 'success')
   }
 
   const handleEdit = (item) => {
@@ -1597,8 +1650,9 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   const handleCsvImport = (imported, skippedProposed) => {
     setItems(prev => [...prev, ...imported])
     setShowCsvImport(false)
+    showToast(`${imported.length}件を取込みました`, 'success')
     if (skippedProposed > 0) {
-      alert(`${skippedProposed}件は提案リストに登録済みのためスキップされました。`)
+      showToast(`${skippedProposed}件は提案リストに既に登録済みのためスキップしました`, 'warning', 5000)
     }
   }
 
