@@ -88,10 +88,17 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
   // メール送信設定
   const [fromInput, setFromInput] = useState(settings.emailFrom || 'noreply@work-talk.jp')
   const [senderNameInput, setSenderNameInput] = useState(settings.emailSenderName || 'WorkTalk営業チーム')
+  const [mailGasUrlInput, setMailGasUrlInput] = useState(settings.mailGasUrl || '')
   const [emailSettingSaved, setEmailSettingSaved] = useState(false)
   const handleSaveEmailSettings = () => {
-    setSettings(prev => ({ ...prev, emailFrom: fromInput.trim(), emailSenderName: senderNameInput.trim() }))
+    setSettings(prev => ({
+      ...prev,
+      emailFrom: fromInput.trim(),
+      emailSenderName: senderNameInput.trim(),
+      mailGasUrl: mailGasUrlInput.trim(),
+    }))
     setEmailSettingSaved(true)
+    showToast('メール設定を保存しました', 'success')
     setTimeout(() => setEmailSettingSaved(false), 2000)
   }
 
@@ -207,6 +214,25 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
             <input type="text" value={senderNameInput} onChange={e => setSenderNameInput(e.target.value)} className={INPUT} placeholder="WorkTalk営業チーム" />
           </div>
         </div>
+
+        {/* Sales Board メール送信用 GAS URL (Wave 3) */}
+        <div className="mb-4">
+          <label className="block text-xs font-medium text-slate-600 mb-1">
+            Sales Board メール送信用 GAS Web App URL
+          </label>
+          <input
+            type="url"
+            value={mailGasUrlInput}
+            onChange={e => setMailGasUrlInput(e.target.value)}
+            placeholder="https://script.google.com/macros/s/xxxxx/exec"
+            className={INPUT}
+          />
+          <p className="text-[11px] text-slate-400 mt-1">
+            CSVアップ時の新規企業へのメール送信（SendGrid経由）と Event Webhook 受信で使用する GAS Web App の URL。
+            スプレッドシート同期の GAS（上）とは別プロジェクト。
+          </p>
+        </div>
+
         <div className="flex justify-end mb-6">
           <button onClick={handleSaveEmailSettings} className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors">
             {emailSettingSaved ? '保存済み ✓' : '保存'}

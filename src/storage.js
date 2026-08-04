@@ -36,6 +36,7 @@ export function loadSettings() {
     const defaults = {
       apiKey: '',
       sheetSyncUrl: '',
+      mailGasUrl: '',
       emailFrom: 'noreply@work-talk.jp',
       emailSenderName: 'WorkTalk営業チーム',
       emailTemplates: [

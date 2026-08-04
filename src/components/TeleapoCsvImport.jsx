@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
 import { INDUSTRIES, EMPLOYEE_SCALES } from '../constants'
+import { useToast } from './Toast'
+import { useConfirm } from './ConfirmDialog'
 
 // ── 業種変換（CSV大業界・小業界 → Sales Board業種） ──────────────
 const CSV_HOUSING_MINOR = new Set(['注文住宅建築', '住居リフォーム', 'マンション建築', '分譲型住宅建築'])
@@ -204,6 +206,8 @@ function makeDedupKey(item) {
 }
 
 export default function TeleapoCsvImport({ onImport, onClose, existingItems = [], proposedItems = [], salesReps = [], settings = {}, onUpdateItems }) {
+  const { showToast } = useToast()
+  const confirm = useConfirm()
   const [step, setStep] = useState('upload')
   const [csvHeaders, setCsvHeaders] = useState([])
   const [csvRows, setCsvRows] = useState([])
@@ -401,54 +405,85 @@ export default function TeleapoCsvImport({ onImport, onClose, existingItems = []
   const executeImport = async () => {
     // まず emailStatus='未送信' でインポート
     const importData = previewData.map(item => ({ ...item, emailStatus: '未送信' }))
-    onImport(importData, proposedSkipped.length)
-    setStep('done')
-
-    // メールアドレスがあるものを抽出してSendGrid送信
     const withEmail = importData.filter(item => item.email && item.email.includes('@'))
-    if (withEmail.length === 0 || !settings.sheetSyncUrl) {
-      setEmailResult({ sent: 0, failed: 0, skipped: previewData.length })
+    const mailGasUrl = (settings.mailGasUrl || '').trim()
+    const template = (settings.emailTemplates && settings.emailTemplates[0]) || null
+
+    // ── ケース1: メール送信対象なし or GAS URL未設定 → そのままインポートのみ
+    if (withEmail.length === 0 || !mailGasUrl || !template) {
+      onImport(importData, proposedSkipped.length)
+      setStep('done')
+      let skipReason = null
+      if (withEmail.length === 0) skipReason = 'メールアドレス列に有効なメールが無いためスキップ'
+      else if (!mailGasUrl) skipReason = '設定画面で「Sales Board メール送信用 GAS Web App URL」が未設定'
+      else if (!template) skipReason = '設定画面でメールテンプレートが未登録'
+      setEmailResult({ sent: 0, failed: 0, skipped: previewData.length, reason: skipReason })
       return
     }
 
+    // ── ケース2: Confirm を挟む
+    const ok = await confirm({
+      title: 'メール送信を実行しますか？',
+      message: `新規インポート ${importData.length} 件のうち、メールアドレス登録済みの ${withEmail.length} 件に\nテンプレート「${template.name}」でメールを送信します。\n\nよろしいですか？`,
+      confirmText: `${withEmail.length}件に送信`,
+      cancelText: 'インポートのみ（送信しない）',
+    })
+
+    // インポートは常に実行
+    onImport(importData, proposedSkipped.length)
+    setStep('done')
+
+    if (!ok) {
+      setEmailResult({ sent: 0, failed: 0, skipped: previewData.length - withEmail.length, cancelled: true })
+      showToast(`${importData.length}件をインポートしました（メール送信はキャンセル）`, 'info', 4000)
+      return
+    }
+
+    // ── ケース3: GAS 経由で SendGrid 送信
     setEmailSending(true)
     try {
-      const res = await fetch(settings.sheetSyncUrl, {
+      const res = await fetch(mailGasUrl + '?action=send_email', {
         method: 'POST',
+        // Apps Script Web App は Content-Type: text/plain のほうが CORS プリフライトを避けられる
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
-          action: 'sendEmails',
+          action: 'send_email',
+          subject: template.subject || '【WorkTalk】ご挨拶のご連絡',
+          bodyText: template.body || '',
+          senderName: settings.emailSenderName || 'WorkTalk営業チーム',
           recipients: withEmail.map(item => ({
             email: item.email,
-            companyName: item.companyName,
+            companyName: item.companyName || '',
+            contactName: item.contactName || '',
+            teleapoItemId: item.id, // ← SendGrid custom_args で Event Webhook と紐付け
           })),
-          template: {
-            subject: settings.emailSubject || '【WorkTalk】ご挨拶のご連絡',
-            body: settings.emailBody || '',
-            from: settings.emailFrom || 'noreply@work-talk.jp',
-            senderName: settings.emailSenderName || 'WorkTalk営業チーム',
-          },
         }),
       })
       const data = await res.json()
       const sentCount = data.sent || 0
+      const failedCount = data.failed || 0
       setEmailResult({
         sent: sentCount,
-        failed: data.failed || 0,
+        failed: failedCount,
         skipped: previewData.length - withEmail.length,
       })
-      // 送信成功した企業のemailStatusを'送信済み'に更新
+      // 送信成功した企業の emailStatus を '送信済み' に更新
       if (sentCount > 0 && onUpdateItems) {
         const sentEmails = new Set(data.sentEmails || withEmail.map(i => i.email))
         const now = new Date().toISOString()
         onUpdateItems(
           withEmail
             .filter(i => sentEmails.has(i.email))
-            .map(i => ({ id: i.id, emailStatus: '送信済み', emailSentAt: now }))
+            .map(i => ({ id: i.id, emailStatus: '送信済み', emailSentAt: now, emailTemplateId: template.id, emailTemplateName: template.name }))
         )
+        showToast(`${sentCount}件のメールを送信しました`, 'success')
+      }
+      if (failedCount > 0) {
+        showToast(`${failedCount}件のメール送信に失敗しました`, 'error', 6000)
       }
     } catch (err) {
       setEmailResult({ sent: 0, failed: withEmail.length, skipped: previewData.length - withEmail.length, error: err.message })
+      showToast(`メール送信エラー: ${err.message}`, 'error', 6000)
     } finally {
       setEmailSending(false)
     }

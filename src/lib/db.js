@@ -24,6 +24,19 @@ async function fetchRows(table) {
   return data.map(r => r.data)
 }
 
+// email_events は平坦カラム構造（data JSONB ではない）なので専用フェッチ
+// occurred_at DESC で最新から取得、直近5000件まで
+async function fetchEmailEvents(limit = 5000) {
+  if (!supabase) return null
+  const { data, error } = await supabase
+    .from('email_events')
+    .select('id,teleapo_item_id,email,event_type,occurred_at,sg_message_id,sg_event_id,url,metadata')
+    .order('occurred_at', { ascending: false })
+    .limit(limit)
+  if (error) { console.warn('[db:email_events] fetch error:', error.message); return null }
+  return data
+}
+
 export const db = {
   proposals: {
     upsert: items => upsertRows('proposals', items),
@@ -42,6 +55,10 @@ export const db = {
   downloadLeads: {
     upsert: items => upsertRows('download_leads', items),
     fetchAll: () => fetchRows('download_leads'),
+  },
+  emailEvents: {
+    // INSERT はフロントから行わない（GAS 経由で SendGrid Event Webhook が書き込む）
+    fetchAll: () => fetchEmailEvents(),
   },
   settings: {
     async get() {

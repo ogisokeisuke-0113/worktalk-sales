@@ -208,6 +208,51 @@ function migrateKessaisha(proposals) {
   return changed ? migrated : proposals
 }
 
+// ========== email_events → teleapoItems.emailStatus 集約 (Wave 3) ==========
+// 優先順位: クリック済み > 開封済み > 送信済み > 未送信
+// SendGrid Event Webhook (⑧) が Supabase.email_events に記録した履歴を
+// 起動時に取り込み、各 teleapo_item のバッジ表示に反映する
+const EMAIL_EVENT_TO_STATUS = {
+  click: 'クリック済み',
+  open: '開封済み',
+  delivered: '送信済み',
+  processed: '送信済み',
+  bounce: '送信済み',        // 送信 attempted の証跡
+  dropped: '送信済み',
+  // unsubscribe / spamreport は emailStatus を積極的に変えない (別途表示要件があれば対応)
+}
+const EMAIL_STATUS_RANK = { 'クリック済み': 3, '開封済み': 2, '送信済み': 1, '未送信': 0 }
+
+function mergeEmailEvents(items, events) {
+  if (!Array.isArray(events) || events.length === 0) return items
+  const bestByItem = new Map() // teleapo_item_id -> { status, occurred }
+  for (const ev of events) {
+    if (!ev.teleapo_item_id) continue
+    const status = EMAIL_EVENT_TO_STATUS[ev.event_type]
+    if (!status) continue
+    const cur = bestByItem.get(ev.teleapo_item_id)
+    const rank = EMAIL_STATUS_RANK[status] || 0
+    if (!cur || rank > (EMAIL_STATUS_RANK[cur.status] || 0)) {
+      bestByItem.set(ev.teleapo_item_id, { status, occurred: ev.occurred_at })
+    }
+  }
+  if (bestByItem.size === 0) return items
+  return items.map(item => {
+    const best = bestByItem.get(item.id)
+    if (!best) return item
+    const currentRank = EMAIL_STATUS_RANK[item.emailStatus] || 0
+    const bestRank = EMAIL_STATUS_RANK[best.status] || 0
+    if (bestRank <= currentRank) return item
+    const patch = { emailStatus: best.status }
+    if (best.status === '開封済み' || best.status === 'クリック済み') {
+      patch.emailOpenedAt = best.occurred
+    } else if (best.status === '送信済み' && !item.emailSentAt) {
+      patch.emailSentAt = best.occurred
+    }
+    return { ...item, ...patch }
+  })
+}
+
 export default function App() {
   const { showToast } = useToast()
   const [users, setUsers] = useState(() => loadUsers())
@@ -266,13 +311,14 @@ export default function App() {
 
     async function doStartupSync() {
       try {
-        const [remoteProposals, remoteTeleapo, remoteUsers, remoteDownloads, remoteSettings] =
+        const [remoteProposals, remoteTeleapo, remoteUsers, remoteDownloads, remoteSettings, remoteEmailEvents] =
           await Promise.all([
             db.proposals.fetchAll(),
             db.teleapoItems.fetchAll(),
             db.users.fetchAll(),
             db.downloadLeads.fetchAll(),
             db.settings.get(),
+            db.emailEvents.fetchAll(),
           ])
 
         function mergeById(local, remote) {
@@ -285,7 +331,12 @@ export default function App() {
         }
 
         if (remoteProposals) setProposals(prev => mergeById(prev, remoteProposals))
-        if (remoteTeleapo) setTeleapoItems(prev => mergeById(prev, remoteTeleapo))
+        if (remoteTeleapo || remoteEmailEvents) {
+          setTeleapoItems(prev => {
+            const merged = remoteTeleapo ? mergeById(prev, remoteTeleapo) : prev
+            return remoteEmailEvents ? mergeEmailEvents(merged, remoteEmailEvents) : merged
+          })
+        }
         if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers)
         if (remoteDownloads && remoteDownloads.length > 0) setDownloadLeads(remoteDownloads)
         if (remoteSettings) setSettings(prev => ({ ...prev, ...remoteSettings }))
