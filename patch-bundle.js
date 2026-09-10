@@ -166,6 +166,49 @@ function __wtQ(name,api,table,url,key){
   }catch(e){}
   return Q
 }
+function __wtDirty(q,id){
+  /* その行に未送信の変更を持っているか。持っていれば他人の更新で上書きしない */
+  if(!q.baseline||!q.latest||q.baseline===q.latest)return !1;
+  var a=null,b=null,i;
+  for(i=0;i<q.latest.length;i++)if(q.latest[i].id===id){a=q.latest[i];break}
+  if(!a)return !1;
+  for(i=0;i<q.baseline.length;i++)if(q.baseline[i].id===id){b=q.baseline[i];break}
+  return !b||JSON.stringify(a)!==JSON.stringify(b)
+}
+function __wtRemote(q,setItems,row){
+  if(!row||!row.id||!row.data)return;
+  /* 自分が編集中（未送信）の行は触らない */
+  if(q.hot.has(row.id)||__wtDirty(q,row.id))return;
+  var d=row.data;
+  setItems(function(list){
+    var idx=-1,i;
+    for(i=0;i<list.length;i++)if(list[i].id===row.id){idx=i;break}
+    if(idx>=0&&JSON.stringify(list[idx])===JSON.stringify(d))return list;
+    /* 比較基準にも同じものを入れる。入れないと「自分が変更した」と誤判定して送り返してしまう */
+    if(q.baseline){
+      var b=q.baseline,bi=-1;
+      for(i=0;i<b.length;i++)if(b[i].id===row.id){bi=i;break}
+      q.baseline=bi>=0?b.slice(0,bi).concat([d],b.slice(bi+1)):b.concat([d])
+    }
+    return idx>=0?list.slice(0,idx).concat([d],list.slice(idx+1)):list.concat([d])
+  })
+}
+function __wtSub(sb,table,q,setItems){
+  try{
+    var G=globalThis.__wtsub||(globalThis.__wtsub={});
+    if(G[table])return G[table];
+    G[table]=sb.channel("wt-"+table)
+      .on("postgres_changes",{event:"*",schema:"public",table:table},function(p){
+        /* 削除は反映しない。誤爆したときの被害が大きすぎるため、リロードまで待つ */
+        if(p&&(p.eventType==="DELETE"||p.event==="DELETE"))return;
+        p&&p.new&&__wtRemote(q,setItems,p.new)
+      })
+      .subscribe(function(st){
+        st==="SUBSCRIBED"&&console.info("[realtime] "+table+" の購読を開始しました")
+      });
+    return G[table]
+  }catch(e){console.warn("[realtime] 購読に失敗:",e&&e.message)}
+}
 function __wtLogRow(it,c,ix){
   /* call_logs の1行を組み立てる。
      dedup_key は 001_call_logs.sql のバックフィルと同じ規則にすること。
@@ -235,9 +278,11 @@ replaceOnce(
  *     o(prev,remote) は remote||prev なので、この分岐では remote と等価。
  * ───────────────────────────────────────────────────────────── */
 replaceOnce(
-  'P2 起動時の全件upsertを停止',
+  'P2 起動時の全件upsertを停止 + Realtime購読',
   'function o(e,t){return t||e}e&&le(t=>o(t,e)),n&&de(e=>o(e,n)),',
-  'function o(e,t){return t||e}e&&(x.current=e,le(e)),n&&(S.current=n,de(n)),'
+  'function o(e,t){return t||e}e&&(x.current=e,le(e)),n&&(S.current=n,de(n)),' +
+    '__wtSub(Xa,"teleapo_items",__wtQ("teleapo",no.teleapoItems,"teleapo_items",Ja,Ya),de),' +
+    '__wtSub(Xa,"proposals",__wtQ("proposals",no.proposals,"proposals",Ja,Ya),le),'
 );
 
 /* ─────────────────────────────────────────────────────────────
