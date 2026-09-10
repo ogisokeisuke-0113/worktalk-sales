@@ -34,7 +34,7 @@ function mk(id, companyName, phone) {
 const root = fs.mkdtempSync('/tmp/wte2e-');
 fs.mkdirSync(path.join(root, 'worktalk-sales/assets'), { recursive: true });
 fs.copyFileSync(BUNDLE, path.join(root, 'worktalk-sales/assets/app.js'));
-const CSS = process.env.CSS_PATH || path.join(path.dirname(BUNDLE), 'index-DDxHKezY.css');
+const CSS = process.env.CSS_PATH || path.join(path.dirname(path.resolve(BUNDLE)), 'app.css');
 if (fs.existsSync(CSS)) fs.copyFileSync(CSS, path.join(root, 'worktalk-sales/assets/app.css'));
 fs.writeFileSync(
   path.join(root, 'worktalk-sales/index.html'),
@@ -59,7 +59,12 @@ const server = http.createServer((req, res) => {
   const port = server.address().port;
 
   const pw = require('playwright');
-  const browser = await pw.chromium.launch();
+  // 【重要】route() は離脱時の fetch(keepalive) を捕捉できない。
+  // 実際に2026-09-10のテストで1行が本番DBへ漏れた。
+  // DNSレベルで Supabase を潰し、モックをすり抜けた通信が外へ出られないようにする。
+  const browser = await pw.chromium.launch({
+    args: ['--host-resolver-rules=MAP *.supabase.co 127.0.0.1:1, MAP supabase.co 127.0.0.1:1'],
+  });
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 
   const upserts = [];          // teleapo_items への書き込みを全部記録
