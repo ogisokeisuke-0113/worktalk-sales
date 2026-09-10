@@ -51,12 +51,21 @@ replaceOnce(
       'let{data:n,error:m}=await Xa.from(`teleapo_items`).select(`id, data`).in(`id`,ids.slice(k,k+CK));' +
       'if(m)throw Error("既存データの取得に失敗したため保存を中止しました: "+m.message);' +
       'if(n)for(let e of n)r[e.id]=e.data}' +
-    'let hk=x=>x&&x.id?"#"+x.id:`${x&&x.date}|${x&&x.caller}`,' +
+    'let hk=x=>x&&x.id?"#"+x.id:`${x&&x.date}|${x&&x.caller}`,LOGS=[],' +
     'i=e.map(e=>{let t=r[e.id],n=e.callHistory||[];' +
+      /* サーバーにまだ無い履歴＝今回増えた架電記録。call_logs へ退避する */
+      'let rk=new Set(((t&&t.callHistory)||[]).map(hk));' +
+      '(e.callHistory||[]).forEach((c,ci)=>{rk.has(hk(c))||LOGS.push(__wtLogRow(e,c,ci))});' +
       'if(t?.callHistory?.length){let s=new Set(n.map(hk));' +
         'for(let v of t.callHistory)s.has(hk(v))||(n=[...n,v],s.add(hk(v)));' +
         'n=n.slice().sort((a,b)=>String(a&&a.date).localeCompare(String(b&&b.date)))}' +
       'return{id:e.id,data:{...e,callHistory:n},updated_at:new Date().toISOString()}});' +
+    /* 本体より先に追記専用テーブルへ入れる。本体の保存が失敗しても記録は残る。
+       ここが失敗しても本体の保存は止めない（call_logs は保険であって主ではない） */
+    'for(let k=0;k<LOGS.length;k+=CK){' +
+      'try{let{error:le}=await Xa.from(`call_logs`).upsert(LOGS.slice(k,k+CK),{onConflict:"dedup_key",ignoreDuplicates:!0});' +
+        'le&&console.warn("[db:call_logs] 架電履歴の追記に失敗:",le.message)}' +
+      'catch(le){console.warn("[db:call_logs] 架電履歴の追記に失敗:",le&&le.message)}}' +
     'for(let k=0;k<i.length;k+=CK){' +
       'let{error:a}=await Xa.from(`teleapo_items`).upsert(i.slice(k,k+CK));' +
       'if(a)throw Error("保存に失敗しました: "+a.message)}}'
@@ -156,6 +165,28 @@ function __wtQ(name,api,table,url,key){
     });
   }catch(e){}
   return Q
+}
+function __wtLogRow(it,c,ix){
+  /* call_logs の1行を組み立てる。
+     dedup_key は 001_call_logs.sql のバックフィルと同じ規則にすること。
+     「teleapo_item_id|エントリid」、idが無い場合は「teleapo_item_id|pos:配列位置(1始まり)」 */
+  var d=(c&&(c.date||c.calledAt))||"";
+  return{
+    teleapo_item_id:it.id,
+    company_name:it.companyName||null,
+    entry_id:(c&&c.id)||null,
+    dedup_key:it.id+"|"+((c&&c.id)||("pos:"+(ix+1))),
+    caller:(c&&(c.caller||c.calledBy))||"",
+    /* 日時が読めないものは捏造せず null。集計から外れるほうが誤った数字より良い */
+    called_at:/^[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(d)?d:null,
+    result:(c&&c.result)||null,
+    call_type:(c&&c.callType)||null,
+    call_content:(c&&c.callContent)||null,
+    memo:(c&&c.note)||null,
+    rejection_reason:(c&&c.rejectionReason)||null,
+    raw:c,
+    source:"app"
+  }
 }
 function __wtEnq(q,prev,next){
   if(!q.baseline)q.baseline=prev;
