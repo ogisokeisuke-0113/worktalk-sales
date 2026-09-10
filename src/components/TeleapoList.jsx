@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, EMAIL_STATUSES, EMAIL_STATUS_COLORS } from '../constants'
+import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS } from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 
@@ -42,11 +42,11 @@ const PRIORITY_LABELS = ['', '低', '中', '高', '最高']
 const PRIORITY_COLORS = ['', 'bg-slate-100 text-slate-400', 'bg-sky-50 text-[#4a82ae]', 'bg-amber-50 text-amber-700', 'bg-rose-50 text-rose-700']
 
 /* ───────────────────── 企業編集モーダル ───────────────────── */
-function CompanyModal({ item, onSave, onClose, salesReps }) {
+function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '' }) {
   const isEdit = !!item
   const [form, setForm] = useState(item || {
     id: crypto.randomUUID(),
-    companyName: '',
+    companyName: initialCompanyName,
     phone: '',
     recruitmentPhone: '',
     contactName: '',
@@ -80,6 +80,10 @@ function CompanyModal({ item, onSave, onClose, salesReps }) {
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!form.companyName.trim()) return
+    if (form.status === 'アポ確定' && !form.salesRep) {
+      alert('アポ確定の場合は担当営業を設定してください。')
+      return
+    }
     onSave(form)
   }
 
@@ -174,8 +178,23 @@ function CompanyModal({ item, onSave, onClose, salesReps }) {
               </select>
             </div>
             <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">チャネル</label>
+              <select value={form.channel || ''} onChange={e => set('channel', e.target.value)} className={INPUT}>
+                <option value="">新規（テレアポ）</option>
+                {RELATIONSHIPS.filter(r => r !== '新規').map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">リストソース</label>
               <input type="text" value={form.listSource || ''} onChange={e => set('listSource', e.target.value)} className={INPUT} placeholder="セールスブレインなど" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">アポ獲得日</label>
+              <input type="date" value={form.appoDate || ''} onChange={e => set('appoDate', e.target.value)} className={INPUT} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">アポイント日 <span className="text-slate-400 font-normal">（面談予定日）</span></label>
+              <input type="date" value={form.appointmentDate || ''} onChange={e => set('appointmentDate', e.target.value)} className={INPUT} />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">次回架電予定日</label>
@@ -212,49 +231,84 @@ function CompanyModal({ item, onSave, onClose, salesReps }) {
   )
 }
 
-/* ───────────────────── 架電記録モーダル ───────────────────── */
+const CALL_CONTENTS = ['worktalk', '人材紹介', 'その他']
+
+/* ───────────────────── 架電記録サイドパネル ───────────────────── */
 function CallRecordModal({ onSave, onClose }) {
   const [form, setForm] = useState({
-    date: new Date().toISOString().slice(0, 16),
+    callContent: '',
+    callType: '',
     result: '',
+    rejectionReason: '',
     note: '',
     nextCallDate: '',
   })
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
 
+  const handleSave = () => {
+    if (!form.result) return
+    onSave({ ...form, date: new Date().toISOString() })
+  }
+
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b">
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={e => e.stopPropagation()}>
+      {/* オーバーレイ */}
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      {/* サイドパネル */}
+      <div className="relative w-80 h-full bg-white shadow-2xl flex flex-col animate-slide-right">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
           <h3 className="text-base font-bold text-slate-800">架電結果を記録</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
         </div>
-        <div className="p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">日時</label>
-            <input type="datetime-local" value={form.date} onChange={e => set('date', e.target.value)} className={INPUT} />
+            <label className="block text-xs font-medium text-slate-600 mb-1">架電内容</label>
+            <select value={form.callContent} onChange={e => set('callContent', e.target.value)} className={INPUT}>
+              <option value="">選択してください</option>
+              {CALL_CONTENTS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">架電区分</label>
+            <select value={form.callType} onChange={e => set('callType', e.target.value)} className={INPUT}>
+              <option value="">選択してください</option>
+              {CALL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">結果</label>
-            <select value={form.result} onChange={e => set('result', e.target.value)} className={INPUT}>
+            <select value={form.result} onChange={e => { set('result', e.target.value); if (e.target.value !== '断り') set('rejectionReason', '') }} className={INPUT}>
               <option value="">選択してください</option>
               {CALL_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
+          {form.result === '断り' && (
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">断り理由</label>
+              <select value={form.rejectionReason} onChange={e => set('rejectionReason', e.target.value)} className={INPUT}>
+                <option value="">選択してください</option>
+                {CALL_REJECTION_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">担当者名（先方）</label>
+            <input type="text" value={form.contactName || ''} onChange={e => set('contactName', e.target.value)} className={INPUT} placeholder="例：田中 太郎" />
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">メモ</label>
-            <textarea value={form.note} onChange={e => set('note', e.target.value)} rows={2} className={INPUT} placeholder="通話内容のメモ..." />
+            <textarea value={form.note} onChange={e => set('note', e.target.value)} rows={4} className={INPUT} placeholder="通話内容のメモ..." />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">次回架電予定日（任意）</label>
             <input type="date" value={form.nextCallDate} onChange={e => set('nextCallDate', e.target.value)} className={INPUT} />
           </div>
-          <div className="flex justify-end gap-3 pt-1">
-            <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200">キャンセル</button>
-            <button onClick={() => { if (form.result) onSave(form) }}
-              disabled={!form.result}
-              className="px-4 py-2 text-sm text-white bg-[#2d6a9e] rounded-md hover:bg-[#1a5285] disabled:opacity-40">記録</button>
-          </div>
+        </div>
+        <div className="px-5 py-4 border-t border-slate-200 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">キャンセル</button>
+          <button onClick={handleSave}
+            disabled={!form.result}
+            className="flex-1 py-2.5 text-sm text-white bg-[#2d6a9e] rounded-lg hover:bg-[#1a5285] disabled:opacity-40">記録する</button>
         </div>
       </div>
     </div>
@@ -270,7 +324,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
     const { nextCallDate, ...callRecord } = record
     const updated = {
       ...item,
-      callHistory: [...(item.callHistory || []), { ...callRecord, id: crypto.randomUUID() }],
+      callHistory: [...(item.callHistory || []), { ...callRecord, caller: currentUser?.name || '', id: crypto.randomUUID() }],
       status: item.status === '未架電' ? '架電済' : item.status,
       ...(nextCallDate ? { nextCallDate } : {}),
     }
@@ -295,9 +349,6 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
       keepHistory: newKept
         ? [...(item.keepHistory || []), { id: crypto.randomUUID(), date: now, by: currentUser?.name || '' }]
         : (item.keepHistory || []),
-    }
-    if (newKept && (!item.salesRep || item.salesRep === '未確定') && currentUser) {
-      update.salesRep = currentUser.name
     }
     onUpdate(update)
   }
@@ -368,16 +419,22 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
             <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-3">
               {item.recruitmentPhone && (
                 <div className="mb-2">
-                  <p className="text-[10px] text-[#0f766e] font-bold">採用電話番号（直通）</p>
-                  <a href={`tel:${item.recruitmentPhone}`} className="text-base font-bold text-[#0f766e] hover:underline">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <p className="text-[10px] text-[#0f766e] font-bold">採用電話番号（直通）</p>
+                    <span className="text-[9px] bg-[#0b5cff] text-white rounded px-1 py-0.5 font-bold leading-none">ZOOM</span>
+                  </div>
+                  <a href={`zoomphonecall://${item.recruitmentPhone}`} onClick={e => e.stopPropagation()} className="text-base font-bold text-[#0f766e] hover:underline">
                     {item.recruitmentPhone}
                   </a>
                 </div>
               )}
               {item.phone && (
                 <div className={item.recruitmentPhone ? 'border-t border-teal-100 pt-2' : ''}>
-                  <p className="text-[10px] text-slate-400 font-medium">代表電話番号</p>
-                  <a href={`tel:${item.phone}`} className="text-sm text-slate-600 hover:underline">{item.phone}</a>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <p className="text-[10px] text-slate-400 font-medium">代表電話番号</p>
+                    <span className="text-[9px] bg-[#0b5cff] text-white rounded px-1 py-0.5 font-bold leading-none">ZOOM</span>
+                  </div>
+                  <a href={`zoomphonecall://${item.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-slate-600 hover:underline">{item.phone}</a>
                 </div>
               )}
             </div>
@@ -395,6 +452,8 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
               ['採用職種', item.recruitmentJobType],
               ['採用広告費', item.recruitmentAdSpend],
               ['従業員増加数', item.employeeGrowth ? `${item.employeeGrowth}名増` : null],
+              ['チャネル', item.channel || '新規（テレアポ）'],
+              ['アポイント日', item.appointmentDate ? new Date(item.appointmentDate + 'T00:00:00').toLocaleDateString('ja-JP') : null],
               ['リストソース', item.listSource],
               ['担当営業', item.salesRep],
               ['架電回数', `${callCount}回`],
@@ -461,6 +520,12 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
                         'bg-sky-50 text-[#4a82ae]'
                       }`}>{c.result}</span>
                     </div>
+                    {(c.callContent || c.callType) && (
+                      <p className="text-xs text-slate-500 mb-0.5">
+                        {[c.callContent, c.callType].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                    {c.rejectionReason && <p className="text-xs text-rose-500 mb-0.5">断り理由: {c.rejectionReason}</p>}
                     {c.note && <p className="text-xs text-slate-600">{c.note}</p>}
                   </div>
                 ))}
@@ -478,7 +543,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
 }
 
 /* ───────────────────── 検索画面 ───────────────────── */
-function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, allListSources = [], onAddNew, onCsvImport }) {
+function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, allListSources = [], allPrefectures = [], onAddNew, onCsvImport }) {
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
   const activeCount = [
@@ -494,11 +559,20 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
     filters.callResult.length > 0,
     (filters.listSource || []).length > 0,
     filters.nextCallDateUntil,
+    (filters.prefecture || []).length > 0,
+    filters.hasContact,
+    (filters.callType || []).length > 0,
+    (filters.callContent || []).length > 0,
+    filters.keepHasHistory,
+    filters.keepCountMin,
+    filters.keepDateFrom,
+    filters.keepDateTo,
+    (filters.keepBy || []).length > 0,
     searchText.trim()
   ].filter(Boolean).length
 
   const handleClear = () => {
-    setFilters({ status: [], industry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '' })
+    setFilters({ status: [], industry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '', prefecture: [], hasContact: '', callType: [], callContent: [], keepHasHistory: '', keepCountMin: '', keepDateFrom: '', keepDateTo: '', keepBy: [] })
     setSearchText('')
   }
 
@@ -525,118 +599,189 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
         </div>
       </div>
 
-      {/* 検索カード */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h3 className="text-base font-bold text-slate-700 mb-5">絞り込み検索</h3>
+      {/* キーワード検索 */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-5 py-4 mb-3">
+        <input
+          type="text"
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          placeholder="企業名・担当者名・電話番号・メモなど..."
+          className="w-full border border-slate-300 rounded-lg px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf] focus:border-transparent placeholder:text-slate-400"
+        />
+      </div>
 
-        {/* キーワード検索 */}
-        <div className="mb-5">
-          <label className="block text-sm font-medium text-slate-600 mb-2">キーワード</label>
-          <input
-            type="text"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            placeholder="企業名・担当者名・電話番号・メモなど..."
-            className="w-full border border-slate-300 rounded-lg px-4 py-3 text-base bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf] focus:border-transparent placeholder:text-slate-400"
-          />
-        </div>
+      {/* カテゴリーカード群 */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
 
-        {/* フィルター群：3列グリッドに統一 */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {/* 行1 */}
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">ステータス</label>
-            <MultiSelect selected={filters.status} onChange={v => setFilter('status', v)} options={TELEAPO_STATUSES} placeholder="すべて" fullWidth />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">業種</label>
-            <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="すべて" fullWidth />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">担当営業</label>
-            <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="すべて" fullWidth />
-          </div>
-          {/* 行2 */}
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">架電回数</label>
-            <select value={filters.callCount} onChange={e => setFilter('callCount', e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
-              <option value="">すべて</option>
-              <option value="0">0回（未架電）</option>
-              <option value="1-3">1〜3回</option>
-              <option value="4+">4回以上</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">従業員規模</label>
-            <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="すべて" fullWidth />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">Keep</label>
-            <select value={filters.kept} onChange={e => setFilter('kept', e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
-              <option value="">すべて</option>
-              <option value="true">Keep中のみ</option>
-              <option value="false">Keep以外</option>
-            </select>
-          </div>
-          {/* 行3：架電日時（2列）+ メール送信ステータス（1列） */}
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">架電日時</label>
-            <div className="flex items-center gap-2">
-              <input type="date" value={filters.callDateFrom || ''} onChange={e => setFilter('callDateFrom', e.target.value)}
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
-              <span className="text-sm text-slate-400">〜</span>
-              <input type="date" value={filters.callDateTo || ''} onChange={e => setFilter('callDateTo', e.target.value)}
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">メール送信ステータス</label>
-            <select value={filters.emailStatus || ''} onChange={e => setFilter('emailStatus', e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
-              <option value="">すべて</option>
-              {EMAIL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">架電結果（累積履歴に含む）</label>
-            <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULTS} placeholder="すべて" fullWidth />
-          </div>
-          {allListSources.length > 0 && (
+        {/* 企業情報 */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">企業情報</p>
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-600 mb-1.5">リストソース</label>
-              <MultiSelect selected={filters.listSource || []} onChange={v => setFilter('listSource', v)} options={allListSources} placeholder="すべて" fullWidth />
+              <label className="block text-xs font-medium text-slate-600 mb-1">業種</label>
+              <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="すべて" fullWidth />
             </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-slate-600 mb-1.5">次回架電日（この日まで）</label>
-            <input type="date" value={filters.nextCallDateUntil || ''} onChange={e => setFilter('nextCallDateUntil', e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">従業員規模</label>
+              <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="すべて" fullWidth />
+            </div>
+            {allPrefectures.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">都道府県</label>
+                <MultiSelect selected={filters.prefecture || []} onChange={v => setFilter('prefecture', v)} options={allPrefectures} placeholder="すべて" fullWidth />
+              </div>
+            )}
+            {allListSources.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">リストソース</label>
+                <MultiSelect selected={filters.listSource || []} onChange={v => setFilter('listSource', v)} options={allListSources} placeholder="すべて" fullWidth />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* アクション */}
-        <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-          <div className="text-sm text-slate-500">
-            {activeCount > 0 ? (
-              <span>{activeCount}件の条件を設定中</span>
-            ) : (
-              <span>条件なし（全件表示）</span>
-            )}
+        {/* 営業進捗 */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">営業進捗</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">ステータス</label>
+              <MultiSelect selected={filters.status} onChange={v => setFilter('status', v)} options={TELEAPO_STATUSES} placeholder="すべて" fullWidth />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">担当営業</label>
+              <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="すべて" fullWidth />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">担当者名（先方）</label>
+              <select value={filters.hasContact || ''} onChange={e => setFilter('hasContact', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                <option value="">すべて</option>
+                <option value="true">あり</option>
+                <option value="false">なし</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">メール送信ステータス</label>
+              <select value={filters.emailStatus || ''} onChange={e => setFilter('emailStatus', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                <option value="">すべて</option>
+                {EMAIL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
-          <div className="flex gap-3">
-            {activeCount > 0 && (
-              <button onClick={handleClear}
-                className="px-4 py-2.5 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
-                条件クリア
-              </button>
-            )}
-            <button onClick={onSearch}
-              className="px-8 py-2.5 text-sm font-medium text-white bg-[#2d6a9e] rounded-lg hover:bg-[#1a5285] transition-colors shadow-sm">
-              検索する
+        </div>
+
+        {/* Keep */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Keep</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Keep状態</label>
+              <select value={filters.kept} onChange={e => setFilter('kept', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                <option value="">すべて</option>
+                <option value="true">Keep中のみ</option>
+                <option value="false">Keep以外</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Keep履歴</label>
+              <select value={filters.keepHasHistory} onChange={e => setFilter('keepHasHistory', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                <option value="">すべて</option>
+                <option value="true">Keep履歴あり（過去含む）</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Keep回数</label>
+              <select value={filters.keepCountMin} onChange={e => setFilter('keepCountMin', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                <option value="">すべて</option>
+                <option value="1">1回以上</option>
+                <option value="2">2回以上</option>
+                <option value="3">3回以上</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Keep担当者</label>
+              <MultiSelect selected={filters.keepBy || []} onChange={v => setFilter('keepBy', v)} options={salesReps} placeholder="すべて" fullWidth />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">Keep日付</label>
+              <div className="flex items-center gap-2">
+                <input type="date" value={filters.keepDateFrom || ''} onChange={e => setFilter('keepDateFrom', e.target.value)}
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+                <span className="text-sm text-slate-400">〜</span>
+                <input type="date" value={filters.keepDateTo || ''} onChange={e => setFilter('keepDateTo', e.target.value)}
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 架電履歴 */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">架電履歴</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">架電回数</label>
+              <select value={filters.callCount} onChange={e => setFilter('callCount', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                <option value="">すべて</option>
+                <option value="0">0回（未架電）</option>
+                <option value="1-3">1〜3回</option>
+                <option value="4+">4回以上</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">次回架電日（この日まで）</label>
+              <input type="date" value={filters.nextCallDateUntil || ''} onChange={e => setFilter('nextCallDateUntil', e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">架電日時</label>
+              <div className="flex items-center gap-2">
+                <input type="date" value={filters.callDateFrom || ''} onChange={e => setFilter('callDateFrom', e.target.value)}
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+                <span className="text-sm text-slate-400">〜</span>
+                <input type="date" value={filters.callDateTo || ''} onChange={e => setFilter('callDateTo', e.target.value)}
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">架電結果</label>
+              <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULTS} placeholder="すべて" fullWidth />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">架電区分</label>
+              <MultiSelect selected={filters.callType || []} onChange={v => setFilter('callType', v)} options={CALL_TYPES} placeholder="すべて" fullWidth />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-slate-600 mb-1">架電内容</label>
+              <MultiSelect selected={filters.callContent || []} onChange={v => setFilter('callContent', v)} options={CALL_CONTENTS} placeholder="すべて" fullWidth />
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* アクション */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 px-5 py-3 flex items-center justify-between">
+        <div className="text-sm text-slate-500">
+          {activeCount > 0 ? <span>{activeCount}件の条件を設定中</span> : <span>条件なし（全件表示）</span>}
+        </div>
+        <div className="flex gap-3">
+          {activeCount > 0 && (
+            <button onClick={handleClear}
+              className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+              条件クリア
             </button>
-          </div>
+          )}
+          <button onClick={onSearch}
+            className="px-8 py-2 text-sm font-medium text-white bg-[#2d6a9e] rounded-lg hover:bg-[#1a5285] transition-colors shadow-sm">
+            検索する
+          </button>
         </div>
       </div>
     </div>
@@ -750,7 +895,7 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 }
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
-function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, settings = {}, allListSources = [] }) {
+function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, settings = {}, allListSources = [], onAddNew }) {
   const [callRecordTarget, setCallRecordTarget] = useState(null)
   const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -815,15 +960,19 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
   const addCallRecord = (item, record) => {
-    const { nextCallDate, ...callRecord } = record
+    const { nextCallDate, contactName: newContactName, ...callRecord } = record
     const updated = {
       ...item,
-      callHistory: [...(item.callHistory || []), { ...callRecord, id: crypto.randomUUID() }],
+      callHistory: [...(item.callHistory || []), { ...callRecord, caller: currentUser?.name || '', id: crypto.randomUUID() }],
       status: item.status === '未架電' ? '架電済' : item.status,
       ...(nextCallDate ? { nextCallDate } : {}),
+      ...(newContactName ? { contactName: newContactName } : {}),
     }
     onUpdateItem(updated)
     setCallRecordTarget(null)
+    if (record.result === 'アポ獲得') {
+      handlePromote(updated)
+    }
   }
 
   const toggleKeep = (e, item) => {
@@ -842,14 +991,11 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
         ? [...(item.keepHistory || []), { id: crypto.randomUUID(), date: now, by: currentUser?.name || '' }]
         : (item.keepHistory || []),
     }
-    if (newKept && (!item.salesRep || item.salesRep === '未確定') && currentUser) {
-      updated.salesRep = currentUser.name
-    }
     onUpdateItem(updated)
   }
 
   const handleClearAll = () => {
-    setFilters({ status: [], industry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '' })
+    setFilters({ status: [], industry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '', prefecture: [], hasContact: '', callType: [], callContent: [], keepHasHistory: '', keepCountMin: '', keepDateFrom: '', keepDateTo: '', keepBy: [] })
     setSearchText('')
   }
 
@@ -882,6 +1028,10 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
   }
   if (filters.kept === 'true') filterBadges.push({ label: 'Keep中', onRemove: () => setFilter('kept', '') })
   if (filters.kept === 'false') filterBadges.push({ label: 'Keep以外', onRemove: () => setFilter('kept', '') })
+  if (filters.keepHasHistory === 'true') filterBadges.push({ label: 'Keep履歴あり', onRemove: () => setFilter('keepHasHistory', '') })
+  if (filters.keepCountMin) filterBadges.push({ label: `Keep${filters.keepCountMin}回以上`, onRemove: () => setFilter('keepCountMin', '') })
+  if (filters.keepDateFrom || filters.keepDateTo) filterBadges.push({ label: `Keep日: ${filters.keepDateFrom || '...'} 〜 ${filters.keepDateTo || '...'}`, onRemove: () => setFilters(prev => ({ ...prev, keepDateFrom: '', keepDateTo: '' })) })
+  if ((filters.keepBy || []).length) filters.keepBy.forEach(s => filterBadges.push({ label: `Keep担当:${s}`, onRemove: () => setFilters(prev => ({ ...prev, keepBy: prev.keepBy.filter(v => v !== s) })) }))
   if (filters.callDateFrom || filters.callDateTo) {
     filterBadges.push({ label: `架電: ${filters.callDateFrom || '...'} 〜 ${filters.callDateTo || '...'}`, onRemove: () => setFilters(prev => ({ ...prev, callDateFrom: '', callDateTo: '' })) })
   }
@@ -1046,13 +1196,45 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="すべて" fullWidth />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">Keep</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Keep状態</label>
                 <select value={filters.kept} onChange={e => setFilter('kept', e.target.value)}
                   className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
                   <option value="">すべて</option>
                   <option value="true">Keep中のみ</option>
                   <option value="false">Keep以外</option>
                 </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Keep履歴</label>
+                <select value={filters.keepHasHistory} onChange={e => setFilter('keepHasHistory', e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                  <option value="">すべて</option>
+                  <option value="true">Keep履歴あり（過去含む）</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Keep回数</label>
+                <select value={filters.keepCountMin} onChange={e => setFilter('keepCountMin', e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]">
+                  <option value="">すべて</option>
+                  <option value="1">1回以上</option>
+                  <option value="2">2回以上</option>
+                  <option value="3">3回以上</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Keep担当者</label>
+                <MultiSelect selected={filters.keepBy || []} onChange={v => setFilter('keepBy', v)} options={salesReps} placeholder="すべて" fullWidth />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-500 mb-1">Keep日付</label>
+                <div className="flex items-center gap-2">
+                  <input type="date" value={filters.keepDateFrom || ''} onChange={e => setFilter('keepDateFrom', e.target.value)}
+                    className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+                  <span className="text-xs text-slate-400">〜</span>
+                  <input type="date" value={filters.keepDateTo || ''} onChange={e => setFilter('keepDateTo', e.target.value)}
+                    className="flex-1 border border-slate-300 rounded-lg px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]" />
+                </div>
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-500 mb-1">架電日時</label>
@@ -1103,7 +1285,16 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
         {sortedFiltered.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
             <p className="text-base mb-1">該当する企業がありません</p>
-            <p className="text-xs">検索条件を変更してお試しください</p>
+            <p className="text-xs mb-5">検索条件を変更してお試しください</p>
+            {searchText.trim() && onAddNew && (
+              <button
+                onClick={() => onAddNew(searchText.trim())}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-lg hover:bg-[#1a5285] transition-colors"
+              >
+                <span className="text-lg leading-none">+</span>
+                「{searchText.trim()}」を新規追加
+              </button>
+            )}
           </div>
         ) : sortedFiltered.map(item => {
           const history = item.callHistory || []
@@ -1112,6 +1303,9 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
           const keepActive = isKeepActive(item)
           const isOtherKeep = keepActive && item.keptBy && item.keptBy !== currentUser?.name
           const isAppoConfirmed = item.status === 'アポ確定'
+          const appoDate = isAppoConfirmed
+            ? (item.appoDate || history.find(c => c.result === 'アポ獲得')?.date || null)
+            : null
           const phone = item.recruitmentPhone || item.phone
 
           const isSelected = selectedIds.has(item.id)
@@ -1121,8 +1315,9 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
               onClick={() => selectMode ? toggleSelect({ stopPropagation: () => {} }, item.id) : onSelectItem(item)}
               className={`bg-white rounded-xl border shadow-sm cursor-pointer transition-all hover:shadow-md ${
                 isSelected ? 'border-[#2d6a9e] ring-1 ring-[#2d6a9e]' :
+                isAppoConfirmed ? 'border-teal-400 border-2' :
                 isOtherKeep ? 'opacity-60 border-slate-200' :
-                keepActive ? 'border-amber-300' :
+                keepActive ? 'border-amber-400 border-2' :
                 'border-slate-200 hover:border-slate-300'
               }`}>
 
@@ -1165,99 +1360,136 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 </div>
               </div>
 
-              {/* Row 2: 電話番号ブロック */}
-              {phone && (
-                <div className="mx-4 mb-3 bg-slate-50 rounded-lg px-3 py-2.5 flex items-center gap-4"
-                  onClick={e => e.stopPropagation()}>
-                  <div className="flex-1 min-w-0">
-                    {item.recruitmentPhone && (
-                      <div className={item.phone ? 'mb-1.5' : ''}>
-                        <p className="text-[10px] text-teal-600 font-bold mb-0.5">採用直通</p>
-                        <a href={`tel:${item.recruitmentPhone}`}
-                          className="text-base font-bold text-teal-700 hover:underline tracking-wide">
-                          {item.recruitmentPhone}
-                        </a>
-                      </div>
+              {/* メインボディ: 左=会社情報 / 右=電話・架電記録 */}
+              <div className="mx-4 mb-4 grid grid-cols-[5fr_7fr] gap-2" onClick={e => e.stopPropagation()}>
+
+                {/* 左カラム: 業種・規模・メタ情報 */}
+                <div className="bg-slate-50 rounded-xl px-3 py-2.5">
+                  {item.industry && (
+                    <p className="text-base font-bold text-slate-700 leading-tight">{item.industry}</p>
+                  )}
+                  {item.employeeScale && (
+                    <p className="text-sm font-semibold text-slate-500 mt-0.5">{item.employeeScale}</p>
+                  )}
+                  {item.contactName && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-bold">担当者</span>
+                      <span className="text-sm font-semibold text-[#2d6a9e]">{item.contactName}</span>
+                    </div>
+                  )}
+                  <div className="mt-2 space-y-1 text-sm text-slate-500">
+                    {item.prefecture && <p>{item.prefecture}</p>}
+                    {keepActive && item.keptBy
+                      ? <p>Keep: {item.keptBy}</p>
+                      : isAppoConfirmed && item.salesRep && item.salesRep !== '未確定' && <p>担当: {item.salesRep}</p>
+                    }
+                    {appoDate && (
+                      <p className="text-teal-600 font-medium">
+                        アポ獲得日: {new Date(appoDate).toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                      </p>
                     )}
-                    {item.phone && (
-                      <div className={item.recruitmentPhone ? 'border-t border-slate-200 pt-1.5' : ''}>
-                        <p className="text-[10px] text-slate-400 font-medium mb-0.5">代表</p>
-                        <a href={`tel:${item.phone}`}
-                          className="text-sm text-slate-600 hover:underline">
-                          {item.phone}
-                        </a>
-                      </div>
+                    {item.appointmentDate && (
+                      <p className="text-indigo-600 font-medium">
+                        アポイント日: {new Date(item.appointmentDate + 'T00:00:00').toLocaleDateString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' })}
+                      </p>
+                    )}
+                    {item.nextCallDate && (
+                      <p className={item.nextCallDate < today ? 'text-rose-500 font-medium' : item.nextCallDate === today ? 'text-amber-500 font-medium' : 'text-sky-500'}>
+                        次回: {new Date(item.nextCallDate + 'T00:00:00').toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}
+                      </p>
+                    )}
+                    {item.listSource && <p className="text-slate-400">{item.listSource}</p>}
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-slate-200 text-sm text-slate-500">
+                    架電 <span className="font-bold text-slate-700">{history.length}回</span>
+                    {(item.keepHistory || []).length > 0 && (
+                      <> · Keep <span className="font-bold text-slate-700">{(item.keepHistory || []).length}回</span></>
                     )}
                   </div>
-                  {!isOtherKeep && (
-                    <a href={`tel:${phone}`}
-                      className="flex-shrink-0 px-5 py-2 rounded-full bg-[#2d6a9e] text-white text-sm font-medium hover:bg-[#1a5285] transition-colors">
-                      架電
-                    </a>
-                  )}
                 </div>
-              )}
 
-              {/* Row 3: メタ情報 */}
-              {[
-                item.industry && { text: item.industry },
-                item.employeeScale && { text: item.employeeScale },
-                item.prefecture && { text: item.prefecture },
-                (keepActive && item.keptBy) ? { text: `Keep: ${item.keptBy}` } : (item.salesRep ? { text: `担当: ${item.salesRep}` } : null),
-                item.nextCallDate && { text: `次回: ${new Date(item.nextCallDate + 'T00:00:00').toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}`,
-                  color: item.nextCallDate < today ? 'text-rose-600 font-medium' : item.nextCallDate === today ? 'text-amber-600 font-medium' : 'text-sky-600' },
-                item.listSource && { text: item.listSource, color: 'text-slate-400' },
-              ].filter(Boolean).length > 0 && (
-                <div className="px-4 mb-3 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
-                  {[
-                    item.industry && { text: item.industry },
-                    item.employeeScale && { text: item.employeeScale },
-                    item.prefecture && { text: item.prefecture },
-                    (keepActive && item.keptBy) ? { text: `Keep: ${item.keptBy}` } : (item.salesRep ? { text: `担当: ${item.salesRep}` } : null),
-                    item.nextCallDate && { text: `次回: ${new Date(item.nextCallDate + 'T00:00:00').toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' })}`,
-                      color: item.nextCallDate < today ? 'text-rose-600 font-medium' : item.nextCallDate === today ? 'text-amber-600 font-medium' : 'text-sky-600' },
-                    item.listSource && { text: item.listSource, color: 'text-slate-400' },
-                  ].filter(Boolean).map((meta, idx, arr) => (
-                    <span key={idx} className={`flex items-center gap-2 ${meta.color || ''}`}>
-                      {meta.text}
-                      {idx < arr.length - 1 && <span className="text-slate-300 font-normal">·</span>}
-                    </span>
-                  ))}
-                </div>
-              )}
+                {/* 右カラム: 電話番号 + 直近架電 + ボタン */}
+                <div className="flex flex-col gap-1.5">
 
-              {/* Row 4: 架電履歴 + 架電を記録 */}
-              <div className="px-4 pb-3.5 flex items-center justify-between border-t border-slate-100 pt-2.5"
-                onClick={e => e.stopPropagation()}>
-                <div className="text-xs text-slate-500">
-                  架電 <span className="font-medium text-slate-700">{history.length}回</span>
-                  {(item.keepHistory || []).length > 0 && (
-                    <>
-                      <span className="text-slate-300 mx-1.5">·</span>
-                      Keep <span className="font-medium text-slate-700">{(item.keepHistory || []).length}回</span>
-                    </>
-                  )}
-                  {lastCall && (
-                    <>
-                      <span className="text-slate-300 mx-1.5">·</span>
-                      最終 {lastCall.date ? new Date(lastCall.date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }) : ''}
-                      <span className={`ml-1 font-medium ${
-                        lastCall.result === 'アポ獲得' ? 'text-[#0f766e]' :
-                        lastCall.result === '断り' ? 'text-[#be123c]' :
-                        'text-slate-600'
-                      }`}>{lastCall.result}</span>
-                    </>
+                  {/* 電話番号 + 架電ボタン */}
+                  <div className="bg-slate-50 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      {item.recruitmentPhone && (
+                        <div className={item.phone ? 'mb-1' : ''}>
+                          <p className="text-[10px] text-teal-600 font-bold mb-0.5">採用直通</p>
+                          <a href={`zoomphonecall://${item.recruitmentPhone}`} onClick={e => e.stopPropagation()} className="text-sm font-bold text-teal-700 hover:underline">
+                            {item.recruitmentPhone}
+                          </a>
+                        </div>
+                      )}
+                      {item.phone && (
+                        <div className={item.recruitmentPhone ? 'border-t border-slate-200 pt-1' : ''}>
+                          {item.recruitmentPhone && <p className="text-[10px] text-slate-400 font-medium mb-0.5">代表</p>}
+                          <a href={`zoomphonecall://${item.phone}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-slate-700 hover:underline">
+                            {item.phone}
+                          </a>
+                        </div>
+                      )}
+                      {!phone && <p className="text-xs text-slate-400">電話番号未登録</p>}
+                    </div>
+                    {!isAppoConfirmed && !isOtherKeep && phone && (
+                      <a
+                        href={`zoomphonecall://${phone}`}
+                        onClick={e => e.stopPropagation()}
+                        className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-[#2d6a9e] text-white text-xs font-medium hover:bg-[#1a5285] transition-colors">
+                        架電
+                      </a>
+                    )}
+                  </div>
+
+                  {/* 直近架電 */}
+                  <div className="bg-slate-50 rounded-xl px-3 py-2 flex-1">
+                    <p className="text-[10px] text-slate-400 font-bold mb-1">直近架電</p>
+                    {lastCall ? (() => {
+                      const resultColor =
+                        lastCall.result === 'アポ獲得' ? 'bg-teal-100 text-[#0f766e]' :
+                        lastCall.result === '断り' ? 'bg-rose-100 text-[#be123c]' :
+                        lastCall.result === '折り返し依頼' ? 'bg-amber-100 text-amber-700' :
+                        'bg-sky-100 text-[#2d6a9e]'
+                      const callDate = lastCall.date
+                        ? new Date(lastCall.date).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : ''
+                      return (
+                        <>
+                          <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                            <span className={`text-sm font-bold px-2.5 py-0.5 rounded-md ${resultColor}`}>
+                              {lastCall.result}
+                            </span>
+                            {callDate && <span className="text-sm text-slate-400">{callDate}</span>}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                            {lastCall.callContent && <p className="text-sm text-slate-600"><span className="text-slate-400">内容</span> {lastCall.callContent}</p>}
+                            {lastCall.callType && <p className="text-sm text-slate-600"><span className="text-slate-400">区分</span> {lastCall.callType}</p>}
+                            {lastCall.rejectionReason && <p className="text-sm text-rose-500"><span className="text-slate-400 font-normal">断り</span> {lastCall.rejectionReason}</p>}
+                            {lastCall.note && <p className="text-sm text-slate-600 w-full"><span className="text-slate-400">メモ</span> {lastCall.note}</p>}
+                          </div>
+                        </>
+                      )
+                    })() : (
+                      <p className="text-xs text-slate-400">まだ記録がありません</p>
+                    )}
+                  </div>
+
+                  {/* 架電を記録ボタン */}
+                  {!isAppoConfirmed && (
+                    <div className="flex justify-end">
+                      {isOtherKeep ? (
+                        <span className="text-xs text-slate-400 py-1.5">Keep中</span>
+                      ) : (
+                        <button
+                          onClick={() => setCallRecordTarget(item)}
+                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#2d6a9e] text-white hover:bg-[#1a5285] transition-colors">
+                          架電を記録
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-                {isOtherKeep ? (
-                  <span className="text-xs text-slate-400 px-3 py-1.5">Keep中</span>
-                ) : (
-                  <button
-                    onClick={() => setCallRecordTarget(item)}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-[#2d6a9e] text-white hover:bg-[#1a5285] transition-colors">
-                    架電を記録
-                  </button>
-                )}
               </div>
             </div>
           )
@@ -1442,6 +1674,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }, [])
   const [showCsvImport, setShowCsvImport] = useState(false)
   const [editItem, setEditItem] = useState(null)
+  const [initialCompanyName, setInitialCompanyName] = useState('')
   const [selectedItem, setSelectedItem] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [filters, setFilters] = useState({
@@ -1457,25 +1690,40 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     callResult: [],
     listSource: [],
     nextCallDateUntil: '',
+    prefecture: [],
+    hasContact: '',
+    callType: [],
+    callContent: [],
+    keepHasHistory: '',
+    keepCountMin: '',
+    keepDateFrom: '',
+    keepDateTo: '',
+    keepBy: [],
   })
 
   // ダッシュボードからのフィルタ適用
   useEffect(() => {
     if (initialFilter) {
       const tf = initialFilter._teleapoRepFilter || []
+      const toArr = v => !v ? [] : Array.isArray(v) ? v : [v]
       setFilters({
-        status: [],
-        industry: initialFilter.industry ? [initialFilter.industry] : [],
-        salesRep: initialFilter.salesRep ? [initialFilter.salesRep] : tf,
+        status: toArr(initialFilter.status),
+        industry: toArr(initialFilter.industry),
+        salesRep: initialFilter.salesRep ? toArr(initialFilter.salesRep) : tf,
         callCount: '',
-        employeeScale: initialFilter.employeeScale ? [initialFilter.employeeScale] : [],
+        employeeScale: toArr(initialFilter.employeeScale),
         kept: '',
-        callDateFrom: '',
-        callDateTo: '',
+        callDateFrom: initialFilter.callDateFrom || '',
+        callDateTo: initialFilter.callDateTo || '',
         emailStatus: '',
         callResult: [],
         listSource: [],
         nextCallDateUntil: '',
+        keepHasHistory: '',
+        keepCountMin: '',
+        keepDateFrom: '',
+        keepDateTo: '',
+        keepBy: [],
       })
       setSearchText('')
       setPage('results')
@@ -1486,15 +1734,21 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   // 登録ユーザー + 既存データから営業担当を統合
   const salesReps = useMemo(() => {
     const set = new Set(users.map(u => u.name))
-    set.add('未確定')
     items.forEach(i => { if (i.salesRep) set.add(i.salesRep) })
     proposals.forEach(p => { if (p.salesRep) set.add(p.salesRep) })
-    return [...set].sort()
+    const sorted = [...set].filter(r => r !== '未確定').sort()
+    return ['未確定', ...sorted]
   }, [items, proposals, users])
 
   const allListSources = useMemo(() => {
     const set = new Set()
     items.forEach(i => { if (i.listSource) set.add(i.listSource) })
+    return [...set].sort()
+  }, [items])
+
+  const allPrefectures = useMemo(() => {
+    const set = new Set()
+    items.forEach(i => { if (i.prefecture) set.add(i.prefecture) })
     return [...set].sort()
   }, [items])
 
@@ -1511,6 +1765,29 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       if (filters.employeeScale.length && !filters.employeeScale.includes(item.employeeScale)) return false
       if (filters.kept === 'true' && !isKeepActive(item)) return false
       if (filters.kept === 'false' && isKeepActive(item)) return false
+      // Keep履歴フィルター
+      const kh = item.keepHistory || []
+      if (filters.keepHasHistory === 'true' && kh.length === 0 && !isKeepActive(item)) return false
+      if (filters.keepCountMin) {
+        const totalKeeps = kh.length + (isKeepActive(item) ? 1 : 0)
+        if (totalKeeps < parseInt(filters.keepCountMin)) return false
+      }
+      if (filters.keepDateFrom || filters.keepDateTo) {
+        const from = filters.keepDateFrom ? new Date(filters.keepDateFrom + 'T00:00:00') : null
+        const to = filters.keepDateTo ? new Date(filters.keepDateTo + 'T23:59:59') : null
+        const allKeeps = [...kh, ...(isKeepActive(item) && item.keptAt ? [{ date: item.keptAt }] : [])]
+        if (!allKeeps.some(k => {
+          if (!k.date) return false
+          const d = new Date(k.date)
+          if (from && d < from) return false
+          if (to && d > to) return false
+          return true
+        })) return false
+      }
+      if ((filters.keepBy || []).length) {
+        const allKeepers = [...kh.map(k => k.by), ...(isKeepActive(item) && item.keptBy ? [item.keptBy] : [])]
+        if (!allKeepers.some(b => filters.keepBy.includes(b))) return false
+      }
       const cc = (item.callHistory || []).length
       if (filters.callCount === '0' && cc !== 0) return false
       if (filters.callCount === '1-3' && (cc < 1 || cc > 3)) return false
@@ -1540,6 +1817,17 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       }
       if ((filters.listSource || []).length && !filters.listSource.includes(item.listSource || '')) return false
       if (filters.nextCallDateUntil && (!item.nextCallDate || item.nextCallDate > filters.nextCallDateUntil)) return false
+      if ((filters.prefecture || []).length && !filters.prefecture.includes(item.prefecture || '')) return false
+      if (filters.hasContact === 'true' && !item.contactName) return false
+      if (filters.hasContact === 'false' && item.contactName) return false
+      if ((filters.callType || []).length) {
+        const history = item.callHistory || []
+        if (!history.some(c => filters.callType.includes(c.callType))) return false
+      }
+      if ((filters.callContent || []).length) {
+        const history = item.callHistory || []
+        if (!history.some(c => filters.callContent.includes(c.callContent))) return false
+      }
       if (q) {
         const hay = [item.companyName, item.phone, item.contactName, item.salesRep, item.industry, item.memo]
           .filter(Boolean).join(' ').toLowerCase()
@@ -1550,12 +1838,39 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }, [items, filters, searchText])
 
   const handleSave = (item) => {
+    if (item.status === 'アポ確定' && !item.salesRep) {
+      alert('アポ確定の場合は担当営業を設定してください。')
+      return
+    }
     const isNew = !items.some(i => i.id === item.id)
     if (isNew) {
       const name = (item.companyName || '').trim().toLowerCase()
-      if (name && proposedNames.has(name)) {
-        const ok = window.confirm(`「${item.companyName}」はすでに提案リストに登録されています。\nテレアポリストにも追加しますか？`)
-        if (!ok) return
+      if (name) {
+        const existingNames = new Set(items.map(i => (i.companyName || '').trim().toLowerCase()))
+        if (existingNames.has(name)) {
+          const ok = window.confirm(`「${item.companyName}」はすでにテレアポリストに登録されています。\n重複して追加しますか？`)
+          if (!ok) return
+        } else if (proposedNames.has(name)) {
+          const ok = window.confirm(`「${item.companyName}」はすでに提案リストに登録されています。\nテレアポリストにも追加しますか？`)
+          if (!ok) return
+        }
+      }
+    }
+    if (!isNew && item.status === 'アポ確定') {
+      const prev = items.find(i => i.id === item.id)
+      if (!prev || prev.status !== 'アポ確定') {
+        const promoted = {
+          ...item,
+          isKept: false,
+          keptBy: '',
+          keptAt: '',
+          ...(!item.salesRep || item.salesRep === '未確定') && currentUser?.name ? { salesRep: currentUser.name } : {},
+        }
+        setItems(prev => prev.map(i => i.id === promoted.id ? promoted : i))
+        onPromote(promoted)
+        setShowModal(false)
+        setEditItem(null)
+        return
       }
     }
     setItems(prev => {
@@ -1582,7 +1897,14 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }
 
   const handlePromote = (item) => {
-    const updated = { ...item, status: 'アポ確定', isKept: false, keptBy: '', keptAt: '' }
+    const updated = {
+      ...item,
+      status: 'アポ確定',
+      isKept: false,
+      keptBy: '',
+      keptAt: '',
+      ...(!item.salesRep || item.salesRep === '未確定') && currentUser?.name ? { salesRep: currentUser.name } : {},
+    }
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
     onPromote(updated)
     setSelectedItem(null)
@@ -1688,6 +2010,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           stats={stats}
           salesReps={salesReps}
           allListSources={allListSources}
+          allPrefectures={allPrefectures}
           onAddNew={() => { setEditItem(null); setShowModal(true) }}
           onCsvImport={() => setShowCsvImport(true)}
         />
@@ -1709,6 +2032,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           salesReps={salesReps}
           settings={settings}
           allListSources={allListSources}
+          onAddNew={name => { setInitialCompanyName(name); setEditItem(null); setShowModal(true) }}
         />
       )}
 
@@ -1730,8 +2054,9 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
         <CompanyModal
           item={editItem}
           salesReps={salesReps}
+          initialCompanyName={initialCompanyName}
           onSave={handleSave}
-          onClose={() => { setShowModal(false); setEditItem(null) }}
+          onClose={() => { setShowModal(false); setEditItem(null); setInitialCompanyName('') }}
         />
       )}
 

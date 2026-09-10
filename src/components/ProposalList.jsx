@@ -1,16 +1,18 @@
 import { useState, useMemo, useEffect } from 'react'
-import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, STATUS_COLORS } from '../constants'
+import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, STATUS_COLORS, PROPOSAL_SERVICES } from '../constants'
 import ProposalSidePanel from './ProposalModal'
 import CsvImportModal from './CsvImportModal'
 import KanbanBoard from './KanbanBoard'
 import MultiSelect from './MultiSelect'
 
 function exportCsv(proposals) {
-  const headers = ['初回提案日時','企業名','営業担当','担当者','業種','従業員規模','優先フラグ','その他','役職','提案状況','決裁者アポ日','結論日','チャネル','失注理由','失注理由詳細','備考']
+  const headers = ['初回提案日時','企業名','営業担当','担当者','業種','従業員規模','優先フラグ','その他','役職','提案状況','決裁者アポ日','結論日','チャネル','失注カテゴリ','競合他社名','再検討時期','商談懸念事項','失注理由（要件）','失注理由詳細','備考']
   const rows = proposals.map(p => [
     p.initialDate, p.companyName, p.salesRep, p.contactName, p.industry, p.employeeScale,
     p.priorityFlag ? '○' : '', p.other, p.position, p.status,
-    p.decisionMakerDate, p.conclusionDate, p.relationship, p.lossReason, p.lossReasonDetail, p.notes,
+    p.decisionMakerDate, p.conclusionDate, p.relationship,
+    p.lossCategory, p.competitorName, p.reconsiderationTiming, p.lossNotes,
+    p.lossReason, p.lossReasonDetail, p.notes,
   ].map(v => `"${(v ?? '').toString().replace(/"/g, '""')}"`).join(','))
 
   const bom = '\uFEFF'
@@ -24,7 +26,7 @@ function exportCsv(proposals) {
   URL.revokeObjectURL(url)
 }
 
-export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, users = [], onDeleteProposals }) {
+export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, pendingEditProposalId, onPendingConsumed, users = [], onDeleteProposals }) {
   const [showPanel, setShowPanel] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -45,6 +47,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     employeeScale: [],
     lossReason: [],
     decisionMaker: '',
+    service: [],
   })
 
   // ダッシュボードからのフィルタ適用（ダッシュボードの絞り込み状態を引き継ぐ）
@@ -74,6 +77,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         employeeScale: clickEmployeeScale.length ? clickEmployeeScale : [],
         lossReason: initialFilter.lossReason ? [initialFilter.lossReason] : [],
         salesRep: clickSalesRep.length ? clickSalesRep : (df.salesRep || []),
+        service: [],
         priority: '',
         month: initialFilter.month ? [initialFilter.month] : [],
         decisionMaker: initialFilter.decisionMaker || df.decisionMaker || '',
@@ -85,6 +89,16 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       onFilterConsumed?.()
     }
   }, [initialFilter])
+
+  useEffect(() => {
+    if (!pendingEditProposalId) return
+    const proposal = proposals.find(p => p.id === pendingEditProposalId)
+    if (proposal) {
+      setEditItem(proposal)
+      setShowPanel(true)
+      onPendingConsumed?.()
+    }
+  }, [pendingEditProposalId, proposals])
 
   const months = useMemo(() => {
     const set = new Set()
@@ -116,6 +130,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       if (filters.lossReason.length && !filters.lossReason.includes(p.lossReason)) return false
       if (filters.decisionMaker === 'yes' && !p.decisionMakerDate) return false
       if (filters.decisionMaker === 'no' && p.decisionMakerDate) return false
+      if (filters.service.length && !filters.service.includes(p.service)) return false
       if (dateFrom && (!p.initialDate || p.initialDate < dateFrom)) return false
       if (dateTo && (!p.initialDate || p.initialDate > dateTo)) return false
       if (q) {
@@ -309,6 +324,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         <MultiSelect selected={filters.relationship} onChange={v => setFilter('relationship', v)} options={RELATIONSHIPS} placeholder="全チャネル" />
         <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="全営業" />
         <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="全規模" />
+        <MultiSelect selected={filters.service} onChange={v => setFilter('service', v)} options={PROPOSAL_SERVICES} placeholder="全サービス" />
         <select value={filters.priority} onChange={e => setFilter('priority', e.target.value)}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
           <option value="">優先フラグ</option>
@@ -330,7 +346,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           <span className={`text-sm ${filters.decisionMaker === 'yes' ? 'text-blue-700 font-medium' : 'text-slate-600'}`}>決裁者アポあり</span>
         </label>
         {(Object.values(filters).some(v => Array.isArray(v) ? v.length > 0 : Boolean(v)) || dateFrom || dateTo) && (
-          <button onClick={() => { setFilters({ industry: [], status: [], relationship: [], priority: '', month: [], salesRep: [], employeeScale: [], lossReason: [], decisionMaker: '' }); setDateFrom(''); setDateTo('') }}
+          <button onClick={() => { setFilters({ industry: [], status: [], relationship: [], priority: '', month: [], salesRep: [], employeeScale: [], lossReason: [], decisionMaker: '', service: [] }); setDateFrom(''); setDateTo('') }}
             className="text-sm text-[#4a82ae] hover:text-[#2d6a9e] px-2">
             クリア
           </button>
@@ -406,6 +422,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">提案日</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">更新日</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">企業名</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">サービス</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">業種</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">営業</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">担当者</th>
@@ -413,6 +430,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">状況</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">チャネル</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">決裁者アポ</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">結論日</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-slate-500 uppercase whitespace-nowrap">操作</th>
                 </tr>
               </thead>
@@ -438,6 +456,13 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                       {p.priorityFlag && <span className="text-yellow-500 mr-1">&#9733;</span>}
                       {p.companyName}
                     </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {p.service ? (
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[#e8f0f8] text-[#2d6a9e]">
+                          {p.service}
+                        </span>
+                      ) : <span className="text-slate-300 text-xs">-</span>}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-500 text-xs">{p.industry || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.salesRep}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.contactName}</td>
@@ -449,6 +474,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.relationship}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.decisionMakerDate}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.conclusionDate || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-center">
                       <button
                         onClick={e => { e.stopPropagation(); handleDelete(p.id) }}
@@ -470,6 +496,13 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           proposal={editItem}
           onSave={handleSave}
           onClose={() => { setShowPanel(false); setEditItem(null) }}
+          onDelete={(id) => {
+            const toDelete = proposals.filter(p => p.id === id)
+            onDeleteProposals?.(toDelete)
+            setProposals(prev => prev.filter(p => p.id !== id))
+            setShowPanel(false)
+            setEditItem(null)
+          }}
           apiKey={apiKey}
           salesReps={salesReps}
         />

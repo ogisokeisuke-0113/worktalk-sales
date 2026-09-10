@@ -53,6 +53,25 @@ export const LOSS_REASONS = [
   '旧ダイレクト契約済み',
 ]
 
+export const LOSS_CATEGORIES = [
+  '価格・コスト',
+  'タイミング',
+  '競合他社',
+  '機能・品質',
+  '社内決裁NG',
+  '要件不一致',
+  'その他',
+]
+
+export const RECONSIDERING_TIMINGS = [
+  '1ヶ月以内',
+  '3ヶ月以内',
+  '半年以内',
+  '1年以内',
+  '時期未定',
+  '再検討なし',
+]
+
 export const TELEAPO_STATUSES = [
   '未架電',
   '架電済',
@@ -61,12 +80,83 @@ export const TELEAPO_STATUSES = [
 ]
 
 export const CALL_RESULTS = [
-  '不在',
+  'アポ獲得',
   '受付ブロック',
   '担当者不在',
-  '資料送付済',
+  '不通',
+  '担当者接触',
+  '資料送付',
   '折り返し依頼',
   '断り',
+]
+
+export const CALL_REJECTION_REASONS = [
+  '充足／採用停止',
+  '採用に困っていない',
+  '成果報酬のみ',
+  '予算なし',
+  '他社利用中',
+  '新規サービスお断り',
+  'タイミングが合わない',
+  '担当者権限なし',
+  'その他',
+]
+
+export const CALL_TYPES = ['新卒', '中途']
+
+export const PROPOSAL_SERVICES = [
+  'worktalk',
+  'AIO対策',
+  'AI採用担当者',
+  'indeed運用代行',
+  'RPO',
+  '研修',
+  'HP制作',
+  'その他',
+]
+
+export const CONTACT_POSITIONS = [
+  '社長・代表',
+  '役員',
+  '部長',
+  '課長',
+  '人事担当',
+  'その他',
+]
+
+export const MEETING_PHASES = [
+  'ヒアリング',
+  '提案',
+  '金額提示',
+  'クロージング',
+  'フォローアップ',
+]
+
+export const MEETING_CHECKS = [
+  '課題確認',
+  '予算確認',
+  '決裁者確認',
+  '導入時期確認',
+]
+
+export const NEXT_ACTIONS = [
+  '日程調整',
+  '資料送付',
+  '社内稟議待ち',
+  '決裁者アポ調整',
+  '契約手続き',
+  '様子見・再連絡',
+  'クローズ',
+]
+
+export const MEETING_RESULTS = [
+  '担当者合意',
+  '決裁者合意',
+  '受注',
+  '失注',
+  '継続検討',
+  '日程調整中',
+  '見送り',
 ]
 
 export const STATUS_COLORS = {
@@ -119,6 +209,7 @@ export const FUNNEL_COLORS = ['#dbe6f0', '#b8cfe0', '#93b5d0', '#6e9bbf', '#4a82
 
 export const DEFAULT_PROPOSAL = {
   id: '',
+  service: '',
   initialDate: '',
   companyName: '',
   salesRep: '',
@@ -134,6 +225,11 @@ export const DEFAULT_PROPOSAL = {
   relationship: '新規',
   lossReason: '',
   lossReasonDetail: '',
+  lossCategory: '',
+  competitorName: '',
+  lossNotes: '',
+  reconsiderationTiming: '',
   notes: '',
   activityLog: [],
+  meetingLog: [],
 }

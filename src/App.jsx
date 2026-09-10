@@ -18,6 +18,14 @@ const TABS = [
 ]
 
 // ========== スプレッドシート同期 ==========
+const SALES_REP_MAP = {
+  '美藤': '美藤 陸',
+  '小木曽': '小木曽 圭祐',
+  '石本': '石本 善大',
+  '梶田': '梶田 祐守',
+  '兼平': '兼平 竜也',
+}
+
 const SHEET_COL_MAP = {
   '初回提案日時': 'initialDate',
   '初回アポ日': 'initialDate',
@@ -112,6 +120,9 @@ function mapSheetRow(row) {
       p[engKey] = formatSheetDate(val)
     } else if (engKey === 'employeeScale') {
       p[engKey] = normalizeScale(val)
+    } else if (engKey === 'salesRep') {
+      const name = String(val).trim()
+      p[engKey] = SALES_REP_MAP[name] || name
     } else {
       p[engKey] = String(val).trim()
     }
@@ -213,6 +224,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [proposalFilter, setProposalFilter] = useState(null)
   const [teleapoFilter, setTeleapoFilter] = useState(null)
+  const [pendingEditProposalId, setPendingEditProposalId] = useState(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null) // null | { status:'loading'|'ok'|'error', time, count, message }
   const [deletedKeys, setDeletedKeys] = useState(() => loadDeletedKeys())
@@ -275,11 +287,8 @@ export default function App() {
 
         function mergeById(local, remote) {
           if (!remote) return local
-          const remoteMap = new Map(remote.map(r => [r.id, r]))
-          const merged = local.map(item => remoteMap.has(item.id) ? remoteMap.get(item.id) : item)
-          const localIds = new Set(local.map(i => i.id))
-          remote.forEach(r => { if (!localIds.has(r.id)) merged.push(r) })
-          return merged
+          // Supabaseを正とする：remote に存在しないローカルレコードは削除済みとして除外
+          return remote
         }
 
         if (remoteProposals) setProposals(prev => mergeById(prev, remoteProposals))
@@ -302,9 +311,15 @@ export default function App() {
     prevProposalsRef.current = proposals
     if (!prev) return  // 初回マウント時は書き込みしない
     const timer = setTimeout(async () => {
-      if (proposals.length > 0) await db.proposals.upsert(proposals)
+      // 変更されたアイテムのみupsert（全件送信によるタイムアウト防止）
+      const prevMap = new Map(prev.map(p => [p.id, p]))
+      const changed = proposals.filter(p => {
+        const old = prevMap.get(p.id)
+        return !old || JSON.stringify(old) !== JSON.stringify(p)
+      })
+      if (changed.length > 0) await db.proposals.upsert(changed)
       const currentIds = new Set(proposals.map(p => p.id))
-      const deletedIds = (prev || []).filter(p => !currentIds.has(p.id)).map(p => p.id)
+      const deletedIds = prev.filter(p => !currentIds.has(p.id)).map(p => p.id)
       if (deletedIds.length) await db.proposals.delete(deletedIds)
     }, 1500)
     return () => clearTimeout(timer)
@@ -316,9 +331,15 @@ export default function App() {
     prevTeleapoRef.current = teleapoItems
     if (!prev) return
     const timer = setTimeout(async () => {
-      if (teleapoItems.length > 0) await db.teleapoItems.upsert(teleapoItems)
+      // 変更されたアイテムのみupsert（全9000件送信によるタイムアウト防止）
+      const prevMap = new Map(prev.map(i => [i.id, i]))
+      const changed = teleapoItems.filter(i => {
+        const old = prevMap.get(i.id)
+        return !old || JSON.stringify(old) !== JSON.stringify(i)
+      })
+      if (changed.length > 0) await db.teleapoItems.upsert(changed)
       const currentIds = new Set(teleapoItems.map(i => i.id))
-      const deletedIds = (prev || []).filter(i => !currentIds.has(i.id)).map(i => i.id)
+      const deletedIds = prev.filter(i => !currentIds.has(i.id)).map(i => i.id)
       if (deletedIds.length) await db.teleapoItems.delete(deletedIds)
     }, 1500)
     return () => clearTimeout(timer)
@@ -380,7 +401,7 @@ export default function App() {
       // 「未提案」「アポ獲得不可」はシステムに取り込まない
       const SKIP_STATUSES = ['未提案', 'アポ獲得不可']
       const mapped = rows.map(mapSheetRow).filter(r =>
-        r.companyName && !SKIP_STATUSES.includes(r.status)
+        r.companyName && r.salesRep && !SKIP_STATUSES.includes(r.status)
       )
       const incomingNames = new Set(mapped.map(r => r.companyName))
       const validStatuses = ['アポ確定','担当者合意','決裁者アポ調整中','決裁者合意','受注','失注']
@@ -453,8 +474,9 @@ export default function App() {
   }
 
   const promoteToProposal = (teleapoItem) => {
+    const newId = crypto.randomUUID()
     const newProposal = {
-      id: crypto.randomUUID(),
+      id: newId,
       initialDate: new Date().toISOString().slice(0, 10),
       companyName: teleapoItem.companyName,
       salesRep: currentUser?.name || '',
@@ -483,6 +505,8 @@ export default function App() {
         ? { ...i, status: 'アポ確定', isKept: false, keptBy: '', keptAt: '' }
         : i
     ))
+    switchTab('proposals')
+    setPendingEditProposalId(newId)
   }
 
   // Show login screen if not logged in
@@ -600,6 +624,8 @@ export default function App() {
               apiKey={settings.apiKey}
               initialFilter={proposalFilter}
               onFilterConsumed={() => setProposalFilter(null)}
+              pendingEditProposalId={pendingEditProposalId}
+              onPendingConsumed={() => setPendingEditProposalId(null)}
               users={users}
               onDeleteProposals={(deleted) => {
                 setDeletedKeys(prev => {
@@ -616,7 +642,7 @@ export default function App() {
         )}
         {mountedTabs.has('reps') && (
           <div className={activeTab !== 'reps' ? 'hidden' : ''}>
-            <SalesRepView proposals={proposals} users={users} />
+            <SalesRepView proposals={proposals} users={users} teleapoItems={teleapoItems} />
           </div>
         )}
         {mountedTabs.has('teleapo') && (
@@ -645,6 +671,7 @@ export default function App() {
               currentUser={currentUser}
               syncStatus={syncStatus}
               onSync={() => syncFromSheet(settings.sheetSyncUrl)}
+              onImportTeleapo={(items) => setTeleapoItems(items)}
             />
           </div>
         )}

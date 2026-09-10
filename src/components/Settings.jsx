@@ -28,11 +28,30 @@ function TemplateEditor({ template, onSave, onCancel }) {
   )
 }
 
-export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync }) {
+export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync, onImportTeleapo }) {
   const [newUserName, setNewUserName] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
   const [userError, setUserError] = useState('')
   const [userSuccess, setUserSuccess] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+
+  const handleTeleapoJsonImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        if (!Array.isArray(data)) throw new Error('配列形式ではありません')
+        onImportTeleapo(data)
+        setImportStatus(`✅ ${data.length}件をインポートしました`)
+      } catch (err) {
+        setImportStatus(`❌ エラー: ${err.message}`)
+      }
+    }
+    reader.readAsText(file, 'utf-8')
+    e.target.value = ''
+  }
 
   const handleAddUser = () => {
     setUserError('')
@@ -274,6 +293,19 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
           {userSuccess && <p className="text-sm text-green-600 mt-2">{userSuccess}</p>}
         </div>
       </div>
+
+      {/* テレアポリスト JSONインポート */}
+      {onImportTeleapo && (
+        <div className="border border-slate-200 rounded-lg p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-1">テレアポリスト 一括インポート</h3>
+          <p className="text-xs text-slate-400 mb-3">JSONファイルを読み込んで既存データを置き換えます</p>
+          <label className="inline-block cursor-pointer px-4 py-2 bg-slate-700 text-white text-sm rounded-md hover:bg-slate-800 transition-colors">
+            JSONファイルを選択
+            <input type="file" accept=".json" className="hidden" onChange={handleTeleapoJsonImport} />
+          </label>
+          {importStatus && <p className="text-sm mt-2 text-slate-600">{importStatus}</p>}
+        </div>
+      )}
     </div>
   )
 }

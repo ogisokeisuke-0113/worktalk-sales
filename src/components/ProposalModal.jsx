@@ -1,13 +1,30 @@
 import { useState, useEffect } from 'react'
-import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, LOSS_REASONS, DEFAULT_PROPOSAL } from '../constants'
+import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, LOSS_REASONS, LOSS_CATEGORIES, RECONSIDERING_TIMINGS, DEFAULT_PROPOSAL, PROPOSAL_SERVICES, CONTACT_POSITIONS, MEETING_PHASES, MEETING_CHECKS, NEXT_ACTIONS, MEETING_RESULTS } from '../constants'
 
-export default function ProposalSidePanel({ proposal, onSave, onClose, apiKey, salesReps = [] }) {
+const MEETING_DEFAULT = {
+  id: '',
+  date: '',
+  service: '',
+  phase: '',
+  attendeesSelf: [],
+  attendeesClient: '',
+  checks: [],
+  result: '',
+  nextAction: '',
+  nextActionDate: '',
+  note: '',
+}
+
+export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete, apiKey, salesReps = [] }) {
   const isEdit = !!proposal
   const [form, setForm] = useState({ ...DEFAULT_PROPOSAL })
   const [aiLoading, setAiLoading] = useState(false)
   const [aiResult, setAiResult] = useState('')
   const [activeTab, setActiveTab] = useState('info')
   const [newNote, setNewNote] = useState('')
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [meetingForm, setMeetingForm] = useState(null)
+  const [editingMeetingId, setEditingMeetingId] = useState(null)
 
   useEffect(() => {
     if (proposal) {
@@ -15,6 +32,7 @@ export default function ProposalSidePanel({ proposal, onSave, onClose, apiKey, s
         ...DEFAULT_PROPOSAL,
         ...proposal,
         activityLog: proposal.activityLog || [],
+        meetingLog: proposal.meetingLog || [],
       })
     } else {
       setForm({
@@ -106,6 +124,27 @@ JSONのみ出力してください。`
     setNewNote('')
   }
 
+  const handleSaveMeeting = () => {
+    if (!meetingForm) return
+    const entry = { ...meetingForm, id: meetingForm.id || crypto.randomUUID() }
+    setForm(prev => {
+      const log = prev.meetingLog || []
+      const exists = log.find(m => m.id === entry.id)
+      return {
+        ...prev,
+        meetingLog: exists
+          ? log.map(m => m.id === entry.id ? entry : m)
+          : [...log, entry],
+      }
+    })
+    setMeetingForm(null)
+    setEditingMeetingId(null)
+  }
+
+  const handleDeleteMeeting = (id) => {
+    setForm(prev => ({ ...prev, meetingLog: (prev.meetingLog || []).filter(m => m.id !== id) }))
+  }
+
   const handleSubmit = (e) => {
     if (e) e.preventDefault()
     if (!form.companyName.trim()) return
@@ -143,31 +182,72 @@ JSONのみ出力してください。`
           <h3 className="text-base font-bold text-slate-800">
             {isEdit ? '提案を編集' : '新規提案を追加'}
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+          <div className="flex items-center gap-2">
+            {isEdit && onDelete && (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                title="この提案を削除"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                削除
+              </button>
+            )}
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+          </div>
         </div>
+
+        {/* Delete confirmation overlay */}
+        {showDeleteConfirm && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+            <div className="bg-white border border-red-200 rounded-xl shadow-xl p-6 mx-6 text-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <p className="text-sm font-bold text-slate-800 mb-1">この提案を削除しますか？</p>
+              <p className="text-xs text-slate-500 mb-5">
+                <span className="font-medium text-slate-700">{form.companyName}</span> のデータが完全に削除されます。<br />この操作は取り消せません。
+              </p>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={() => { onDelete(proposal.id); onClose() }}
+                  className="px-4 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors font-medium"
+                >
+                  削除する
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex border-b shrink-0">
-          <button
-            onClick={() => setActiveTab('info')}
-            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === 'info'
-                ? 'text-[#2d6a9e] border-b-2 border-[#2d6a9e] bg-sky-50/50'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            基本情報
-          </button>
-          <button
-            onClick={() => setActiveTab('timeline')}
-            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === 'timeline'
-                ? 'text-[#2d6a9e] border-b-2 border-[#2d6a9e] bg-sky-50/50'
-                : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            活動履歴 ({activityLog.length})
-          </button>
+          {[
+            { key: 'info', label: '基本情報' },
+            { key: 'meeting', label: `商談記録 (${(form.meetingLog || []).length})` },
+            { key: 'timeline', label: `活動履歴 (${activityLog.length})` },
+          ].map(t => (
+            <button key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                activeTab === t.key
+                  ? 'text-[#2d6a9e] border-b-2 border-[#2d6a9e] bg-sky-50/50'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
 
         {/* Content */}
@@ -193,6 +273,24 @@ JSONのみ出力してください。`
                 )}
               </div>
 
+              {/* Service Selection */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">提案サービス *</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {PROPOSAL_SERVICES.map(s => (
+                    <button key={s} type="button"
+                      onClick={() => set('service', form.service === s ? '' : s)}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                        form.service === s
+                          ? 'bg-[#2d6a9e] text-white border-[#2d6a9e]'
+                          : 'bg-white text-slate-600 border-slate-300 hover:border-[#2d6a9e] hover:text-[#2d6a9e]'
+                      }`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">初回提案日時</label>
@@ -215,9 +313,11 @@ JSONのみ出力してください。`
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">役職</label>
-                  <input type="text" value={form.position} onChange={e => set('position', e.target.value)}
-                    placeholder="部長、課長など"
-                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  <select value={form.position || ''} onChange={e => set('position', e.target.value)}
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">選択してください</option>
+                    {CONTACT_POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">業種</label>
@@ -273,19 +373,52 @@ JSONのみ出力してください。`
               {form.status === '失注' && (
                 <div className="bg-rose-50 rounded-lg p-3 space-y-3">
                   <p className="text-xs font-bold text-red-700">失注情報</p>
-                  <div>
-                    <label className="block text-xs font-semibold text-red-600 mb-1">失注理由</label>
-                    <select value={form.lossReason} onChange={e => set('lossReason', e.target.value)}
-                      className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white">
-                      <option value="">選択してください</option>
-                      {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-red-600 mb-1">失注カテゴリ</label>
+                      <select value={form.lossCategory || ''} onChange={e => set('lossCategory', e.target.value)}
+                        className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white">
+                        <option value="">選択してください</option>
+                        {LOSS_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-red-600 mb-1">再検討時期</label>
+                      <select value={form.reconsiderationTiming || ''} onChange={e => set('reconsiderationTiming', e.target.value)}
+                        className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white">
+                        <option value="">選択してください</option>
+                        {RECONSIDERING_TIMINGS.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-red-600 mb-1">失注理由詳細</label>
-                    <input type="text" value={form.lossReasonDetail || ''} onChange={e => set('lossReasonDetail', e.target.value)}
-                      placeholder="詳細な理由"
+                    <label className="block text-xs font-semibold text-red-600 mb-1">競合他社名</label>
+                    <input type="text" value={form.competitorName || ''} onChange={e => set('competitorName', e.target.value)}
+                      placeholder="競合となった会社名（任意）"
                       className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-red-600 mb-1">商談での主な懸念事項</label>
+                    <textarea value={form.lossNotes || ''} onChange={e => set('lossNotes', e.target.value)}
+                      rows={2} placeholder="顧客が商談で挙げた懸念・反論など"
+                      className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white" />
+                  </div>
+                  <div className="border-t border-red-100 pt-2">
+                    <p className="text-[10px] font-semibold text-red-400 mb-2 uppercase tracking-wide">要件確認</p>
+                    <div>
+                      <label className="block text-xs font-semibold text-red-600 mb-1">失注理由（要件）</label>
+                      <select value={form.lossReason} onChange={e => set('lossReason', e.target.value)}
+                        className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white">
+                        <option value="">選択してください</option>
+                        {LOSS_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </div>
+                    <div className="mt-2">
+                      <label className="block text-xs font-semibold text-red-600 mb-1">失注理由詳細</label>
+                      <input type="text" value={form.lossReasonDetail || ''} onChange={e => set('lossReasonDetail', e.target.value)}
+                        placeholder="詳細な理由"
+                        className="w-full border border-red-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 bg-white" />
+                    </div>
                   </div>
                 </div>
               )}
@@ -296,12 +429,6 @@ JSONのみ出力してください。`
                   onChange={e => set('priorityFlag', e.target.checked)}
                   className="h-4 w-4 text-[#4a82ae] rounded" />
                 <label htmlFor="priorityFlag" className="text-sm font-medium text-slate-700">優先フラグ</label>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">その他</label>
-                <input type="text" value={form.other} onChange={e => set('other', e.target.value)}
-                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
 
               <div>
@@ -322,6 +449,240 @@ JSONのみ出力してください。`
                 </button>
               </div>
             </form>
+          )}
+
+          {activeTab === 'meeting' && (
+            <div className="p-5 space-y-4">
+              {/* 新規追加ボタン */}
+              {!meetingForm && (
+                <button
+                  onClick={() => { setMeetingForm({ ...MEETING_DEFAULT, date: new Date().toISOString().slice(0, 10) }); setEditingMeetingId(null) }}
+                  className="w-full py-2 border-2 border-dashed border-slate-300 rounded-lg text-sm text-slate-500 hover:border-[#2d6a9e] hover:text-[#2d6a9e] transition-colors"
+                >
+                  + 商談記録を追加
+                </button>
+              )}
+
+              {/* 入力フォーム */}
+              {meetingForm && (
+                <div className="border border-[#2d6a9e] rounded-xl p-4 space-y-3 bg-sky-50/30">
+                  <p className="text-xs font-bold text-[#2d6a9e]">{editingMeetingId ? '商談記録を編集' : '新規商談記録'}</p>
+
+                  {/* 日時・フェーズ */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">日時</label>
+                      <input type="date" value={meetingForm.date}
+                        onChange={e => setMeetingForm(p => ({ ...p, date: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">商談フェーズ</label>
+                      <select value={meetingForm.phase}
+                        onChange={e => setMeetingForm(p => ({ ...p, phase: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                        <option value="">選択</option>
+                        {MEETING_PHASES.map(ph => <option key={ph} value={ph}>{ph}</option>)}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 提案サービス */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">提案サービス</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {PROPOSAL_SERVICES.map(s => (
+                        <button key={s} type="button"
+                          onClick={() => setMeetingForm(p => ({ ...p, service: p.service === s ? '' : s }))}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            meetingForm.service === s
+                              ? 'bg-[#2d6a9e] text-white border-[#2d6a9e]'
+                              : 'bg-white text-slate-600 border-slate-300 hover:border-[#2d6a9e] hover:text-[#2d6a9e]'
+                          }`}>
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 参加者 */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">自社参加者</label>
+                      <div className="flex flex-wrap gap-1">
+                        {salesReps.filter(r => r !== '未確定').map(r => (
+                          <button key={r} type="button"
+                            onClick={() => setMeetingForm(p => {
+                              const cur = p.attendeesSelf || []
+                              return { ...p, attendeesSelf: cur.includes(r) ? cur.filter(x => x !== r) : [...cur, r] }
+                            })}
+                            className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
+                              (meetingForm.attendeesSelf || []).includes(r)
+                                ? 'bg-slate-700 text-white border-slate-700'
+                                : 'bg-white text-slate-500 border-slate-300 hover:border-slate-500'
+                            }`}>
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">先方参加者</label>
+                      <input type="text" value={meetingForm.attendeesClient || ''}
+                        onChange={e => setMeetingForm(p => ({ ...p, attendeesClient: e.target.value }))}
+                        placeholder="例：田中部長"
+                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
+                  </div>
+
+                  {/* 確認項目 */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">確認項目</label>
+                    <div className="flex flex-wrap gap-2">
+                      {MEETING_CHECKS.map(c => (
+                        <label key={c} className="flex items-center gap-1.5 cursor-pointer">
+                          <input type="checkbox"
+                            checked={(meetingForm.checks || []).includes(c)}
+                            onChange={() => setMeetingForm(p => {
+                              const cur = p.checks || []
+                              return { ...p, checks: cur.includes(c) ? cur.filter(x => x !== c) : [...cur, c] }
+                            })}
+                            className="w-3.5 h-3.5 rounded text-[#2d6a9e]" />
+                          <span className="text-xs text-slate-600">{c}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 商談結果 */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">商談結果</label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {MEETING_RESULTS.map(r => (
+                        <button key={r} type="button"
+                          onClick={() => setMeetingForm(p => ({ ...p, result: p.result === r ? '' : r }))}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            meetingForm.result === r
+                              ? r === '受注' ? 'bg-teal-600 text-white border-teal-600'
+                              : r === '失注' ? 'bg-rose-600 text-white border-rose-600'
+                              : 'bg-[#2d6a9e] text-white border-[#2d6a9e]'
+                              : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400'
+                          }`}>
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 次のアクション */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">次のアクション</label>
+                      <select value={meetingForm.nextAction || ''}
+                        onChange={e => setMeetingForm(p => ({ ...p, nextAction: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white">
+                        <option value="">選択</option>
+                        {NEXT_ACTIONS.map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">次回予定日</label>
+                      <input type="date" value={meetingForm.nextActionDate || ''}
+                        onChange={e => setMeetingForm(p => ({ ...p, nextActionDate: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                    </div>
+                  </div>
+
+                  {/* メモ（最小化） */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">メモ（補足のみ）</label>
+                    <input type="text" value={meetingForm.note || ''}
+                      onChange={e => setMeetingForm(p => ({ ...p, note: e.target.value }))}
+                      placeholder="上記で表現できない補足情報のみ"
+                      className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button type="button" onClick={() => { setMeetingForm(null); setEditingMeetingId(null) }}
+                      className="px-4 py-1.5 text-sm text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors">
+                      キャンセル
+                    </button>
+                    <button type="button" onClick={handleSaveMeeting}
+                      className="px-4 py-1.5 text-sm text-white bg-[#2d6a9e] rounded-md hover:bg-[#1a5285] transition-colors font-medium">
+                      保存
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 記録一覧 */}
+              {(form.meetingLog || []).length === 0 && !meetingForm ? (
+                <div className="text-center py-12 text-slate-400">
+                  <p className="text-sm">商談記録がありません</p>
+                  <p className="text-xs mt-1">「商談記録を追加」から記録してください</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {[...(form.meetingLog || [])].sort((a, b) => (b.date || '').localeCompare(a.date || '')).map(m => (
+                    <div key={m.id} className="border border-slate-200 rounded-xl p-4 bg-white">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-slate-800">{m.date || '日付未設定'}</span>
+                          {m.phase && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{m.phase}</span>}
+                          {m.service && <span className="text-xs px-2 py-0.5 rounded-full bg-[#e8f0f8] text-[#2d6a9e] font-medium">{m.service}</span>}
+                          {m.result && (
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              m.result === '受注' ? 'bg-teal-100 text-teal-700' :
+                              m.result === '失注' ? 'bg-rose-100 text-rose-700' :
+                              m.result === '担当者合意' || m.result === '決裁者合意' ? 'bg-amber-50 text-amber-700' :
+                              'bg-slate-100 text-slate-600'
+                            }`}>{m.result}</span>
+                          )}
+                        </div>
+                        <div className="flex gap-1.5 shrink-0">
+                          <button type="button"
+                            onClick={() => { setMeetingForm({ ...MEETING_DEFAULT, ...m }); setEditingMeetingId(m.id) }}
+                            className="text-xs text-slate-400 hover:text-[#2d6a9e] transition-colors">編集</button>
+                          <button type="button"
+                            onClick={() => handleDeleteMeeting(m.id)}
+                            className="text-xs text-slate-400 hover:text-red-500 transition-colors">削除</button>
+                        </div>
+                      </div>
+                      {((m.attendeesSelf && m.attendeesSelf.length > 0) || m.attendeesClient) && (
+                        <p className="text-xs text-slate-500 mb-1">
+                          参加: {[...(m.attendeesSelf || []), m.attendeesClient].filter(Boolean).join(' / ')}
+                        </p>
+                      )}
+                      {m.checks && m.checks.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1.5">
+                          {m.checks.map(c => (
+                            <span key={c} className="text-[10px] px-1.5 py-0.5 rounded bg-teal-50 text-teal-700">✓ {c}</span>
+                          ))}
+                        </div>
+                      )}
+                      {m.nextAction && (
+                        <p className="text-xs text-[#2d6a9e] font-medium mt-1">
+                          → {m.nextAction}{m.nextActionDate ? `（${m.nextActionDate}）` : ''}
+                        </p>
+                      )}
+                      {m.note && <p className="text-xs text-slate-400 mt-1">{m.note}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* 保存ボタン */}
+              <div className="flex justify-end gap-3 pt-4 mt-2 border-t">
+                <button type="button" onClick={onClose}
+                  className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors">
+                  キャンセル
+                </button>
+                <button type="button" onClick={() => handleSubmit()}
+                  className="px-5 py-2 text-sm text-white bg-[#2d6a9e] rounded-md hover:bg-[#1a5285] transition-colors font-medium">
+                  {isEdit ? '更新' : '追加'}
+                </button>
+              </div>
+            </div>
           )}
 
           {activeTab === 'timeline' && (
