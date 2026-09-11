@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys, loadDownloadLeads, saveDownloadLeads } from './storage'
 import { db } from './lib/db'
-import { isSupabaseEnabled } from './lib/supabase'
+import { supabase, isSupabaseEnabled } from './lib/supabase'
+import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
+import SaveIndicator from './components/SaveIndicator'
 import { EMPLOYEE_SCALES } from './constants'
 import Dashboard from './components/Dashboard'
 import ProposalList from './components/ProposalList'
@@ -232,6 +234,17 @@ export default function App() {
   const hasSupabaseSyncedRef = useRef(false)
   const prevProposalsRef = useRef(null)
   const prevTeleapoRef = useRef(null)
+
+  // 送信キュー。比較基準は送信に成功したときにだけ進む（src/lib/saveQueue.js）
+  const queuesRef = useRef(null)
+  if (!queuesRef.current) {
+    const url = import.meta.env.VITE_SUPABASE_URL
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+    queuesRef.current = {
+      teleapo: createSaveQueue({ name: 'teleapo', api: db.teleapoItems, table: 'teleapo_items', url, key }),
+      proposals: createSaveQueue({ name: 'proposals', api: db.proposals, table: 'proposals', url, key }),
+    }
+  }
   const prevUsersRef = useRef(null)
   const prevDownloadLeadsRef = useRef(null)
   const userMenuRef = useRef(null)
@@ -291,38 +304,43 @@ export default function App() {
           return remote
         }
 
-        if (remoteProposals) setProposals(prev => mergeById(prev, remoteProposals))
-        if (remoteTeleapo) setTeleapoItems(prev => mergeById(prev, remoteTeleapo))
+        // 比較基準も同時に更新して差分をゼロにする。
+        // これをやらないと、Supabase(jsonb)が返すキー順とアプリが作るキー順が違うため
+        // JSON.stringify 比較で全件が「変更あり」と誤判定され、
+        // 起動のたびに全9,647行が丸ごと上書きされる。
+        if (remoteProposals) {
+          prevProposalsRef.current = remoteProposals
+          setProposals(remoteProposals)
+        }
+        if (remoteTeleapo) {
+          prevTeleapoRef.current = remoteTeleapo
+          setTeleapoItems(remoteTeleapo)
+        }
         if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers)
         if (remoteDownloads && remoteDownloads.length > 0) setDownloadLeads(remoteDownloads)
         if (remoteSettings) setSettings(prev => ({ ...prev, ...remoteSettings }))
       } catch (e) {
         console.warn('[Supabase] 起動時同期エラー:', e.message)
       }
+
+      // 他メンバーの更新をその場で反映する。
+      // publication が未設定でもここは失敗しない（イベントが届かないだけ）。
+      subscribeChanges(supabase, 'teleapo_items', queuesRef.current.teleapo, setTeleapoItems)
+      subscribeChanges(supabase, 'proposals', queuesRef.current.proposals, setProposals)
     }
 
     doStartupSync()
   }, [currentUser])
 
-  // ── Supabase へのデータ書き込み（変更検知 + 削除追跡） ──────────
+  // ── Supabase へのデータ書き込み（送信キュー経由） ──────────
+  // 直接 setTimeout で送っていた頃は、1.5秒以内に次の操作が入ると
+  // タイマーがキャンセルされ、先の変更が差分から消えて二度と送られなかった。
   useEffect(() => {
     if (!isSupabaseEnabled) return
     const prev = prevProposalsRef.current
     prevProposalsRef.current = proposals
     if (!prev) return  // 初回マウント時は書き込みしない
-    const timer = setTimeout(async () => {
-      // 変更されたアイテムのみupsert（全件送信によるタイムアウト防止）
-      const prevMap = new Map(prev.map(p => [p.id, p]))
-      const changed = proposals.filter(p => {
-        const old = prevMap.get(p.id)
-        return !old || JSON.stringify(old) !== JSON.stringify(p)
-      })
-      if (changed.length > 0) await db.proposals.upsert(changed)
-      const currentIds = new Set(proposals.map(p => p.id))
-      const deletedIds = prev.filter(p => !currentIds.has(p.id)).map(p => p.id)
-      if (deletedIds.length) await db.proposals.delete(deletedIds)
-    }, 1500)
-    return () => clearTimeout(timer)
+    queuesRef.current.proposals.enqueue(prev, proposals)
   }, [proposals])
 
   useEffect(() => {
@@ -330,19 +348,7 @@ export default function App() {
     const prev = prevTeleapoRef.current
     prevTeleapoRef.current = teleapoItems
     if (!prev) return
-    const timer = setTimeout(async () => {
-      // 変更されたアイテムのみupsert（全9000件送信によるタイムアウト防止）
-      const prevMap = new Map(prev.map(i => [i.id, i]))
-      const changed = teleapoItems.filter(i => {
-        const old = prevMap.get(i.id)
-        return !old || JSON.stringify(old) !== JSON.stringify(i)
-      })
-      if (changed.length > 0) await db.teleapoItems.upsert(changed)
-      const currentIds = new Set(teleapoItems.map(i => i.id))
-      const deletedIds = prev.filter(i => !currentIds.has(i.id)).map(i => i.id)
-      if (deletedIds.length) await db.teleapoItems.delete(deletedIds)
-    }, 1500)
-    return () => clearTimeout(timer)
+    queuesRef.current.teleapo.enqueue(prev, teleapoItems)
   }, [teleapoItems])
 
   useEffect(() => {
@@ -522,6 +528,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <SaveIndicator />
       <header className="bg-[#2d6a9e] shadow-md">
         <div className="px-4">
           <div className="flex items-center h-14">
