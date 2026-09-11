@@ -226,6 +226,10 @@ export default function App() {
   const [users, setUsers] = useState(() => loadUsers())
   const [currentUser, setCurrentUser] = useState(() => loadCurrentUser())
   const [authReady, setAuthReady] = useState(false)
+  // 初回のサーバー取得が終わったか。終わるまでは「データがありません」ではなく
+  // 「読み込み中」を出す。9,647件あるので数秒かかる。
+  const [initialSyncing, setInitialSyncing] = useState(true)
+  const serverHydratedRef = useRef(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
 
   // ── 起動直後は IndexedDB のキャッシュを出して待ち時間を減らす ──
@@ -236,13 +240,16 @@ export default function App() {
     dropLegacyCache()
     ;(async () => {
       const [p, t] = await Promise.all([cacheGet('proposals'), cacheGet('teleapo')])
-      if (cancelled) return
-      if (Array.isArray(p) && p.length && !prevProposalsRef.current) {
+      // サーバーの取得が先に終わっていたら、古いキャッシュで上書きしない
+      if (cancelled || serverHydratedRef.current) return
+      if (Array.isArray(p) && p.length) {
         prevProposalsRef.current = p
+        queuesRef.current.proposals.resetBaseline(p)
         setProposals(p)
       }
-      if (Array.isArray(t) && t.length && !prevTeleapoRef.current) {
+      if (Array.isArray(t) && t.length) {
         prevTeleapoRef.current = t
+        queuesRef.current.teleapo.resetBaseline(t)
         setTeleapoItems(t)
       }
     })()
@@ -359,17 +366,22 @@ export default function App() {
         // 起動のたびに全9,647行が丸ごと上書きされる。
         if (remoteProposals) {
           prevProposalsRef.current = remoteProposals
+          queuesRef.current.proposals.resetBaseline(remoteProposals)
           setProposals(remoteProposals)
         }
         if (remoteTeleapo) {
           prevTeleapoRef.current = remoteTeleapo
+          queuesRef.current.teleapo.resetBaseline(remoteTeleapo)
           setTeleapoItems(remoteTeleapo)
         }
+        serverHydratedRef.current = true
         if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers)
         if (remoteDownloads && remoteDownloads.length > 0) setDownloadLeads(remoteDownloads)
         if (remoteSettings) setSettings(prev => ({ ...prev, ...remoteSettings }))
       } catch (e) {
         console.warn('[Supabase] 起動時同期エラー:', e.message)
+      } finally {
+        setInitialSyncing(false)
       }
 
       // 他メンバーの更新をその場で反映する。
@@ -676,7 +688,7 @@ export default function App() {
         <Suspense fallback={<div className="p-8 text-sm text-slate-400">読み込み中…</div>}>
         {mountedTabs.has('dashboard') && (
           <div className={activeTab !== 'dashboard' ? 'hidden' : ''}>
-            <Dashboard proposals={proposals} teleapoItems={teleapoItems} onNavigate={navigateToProposals} onNavigateTeleapo={navigateToTeleapo} users={users} />
+            <Dashboard loading={initialSyncing} proposals={proposals} teleapoItems={teleapoItems} onNavigate={navigateToProposals} onNavigateTeleapo={navigateToTeleapo} users={users} />
           </div>
         )}
         {mountedTabs.has('proposals') && (
@@ -705,7 +717,7 @@ export default function App() {
         )}
         {mountedTabs.has('reps') && (
           <div className={activeTab !== 'reps' ? 'hidden' : ''}>
-            <SalesRepView proposals={proposals} users={users} teleapoItems={teleapoItems} />
+            <SalesRepView loading={initialSyncing} proposals={proposals} users={users} teleapoItems={teleapoItems} />
           </div>
         )}
         {mountedTabs.has('teleapo') && (

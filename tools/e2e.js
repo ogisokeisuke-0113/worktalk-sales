@@ -185,7 +185,9 @@ const server = http.createServer((req, res) => {
       await box.fill(company);
       await page.waitForTimeout(400);
     }
-    await page.getByText(company, { exact: true }).first().click();          // 詳細パネルを開く
+    // 社名は Google 検索リンクになったので、詳細は「詳細」ボタンから開く
+    const card = page.locator('div.bg-white.rounded-xl').filter({ hasText: company }).first();
+    await card.getByRole('button', { name: '詳細', exact: true }).click();
     // DOM の並び順に依存しないよう、中身で対象を特定する
     const panel = page.locator('div.fixed.inset-0')
       .filter({ has: page.getByRole('button', { name: '架電を記録' }) }).first();

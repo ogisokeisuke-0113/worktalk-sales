@@ -188,7 +188,16 @@ export function createSaveQueue({ name, api, table, url, key }) {
     })
   }
 
-  const handle = { enqueue, flush, flushSync, applyRemote, state: q }
+  // サーバーから取り直した / キャッシュから復元したときに基準ごと差し替える。
+  // これをやらないと「キャッシュとサーバーの差」を自分の変更と誤認して
+  // 他の人の更新を巻き戻してしまう。
+  function resetBaseline(items) {
+    q.baseline = items
+    q.latest = items
+    q.hot.clear()
+  }
+
+  const handle = { enqueue, flush, flushSync, applyRemote, resetBaseline, state: q }
   // 保存インジケータから「即時再送」できるように登録しておく
   try { (globalThis.__wtQueues || (globalThis.__wtQueues = {}))[name] = handle } catch { /* noop */ }
   return handle

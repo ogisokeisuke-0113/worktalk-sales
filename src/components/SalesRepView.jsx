@@ -52,7 +52,7 @@ function firstDayOfMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
 }
 
-export default function SalesRepView({ proposals, users = [], teleapoItems = [] }) {
+export default function SalesRepView({ proposals, users = [], teleapoItems = [], loading = false}) {
   const [selectedRep, setSelectedRep] = useState(null)
   const [dateFrom, setDateFrom] = useState(null)
   const [dateTo, setDateTo] = useState(null)
@@ -286,7 +286,7 @@ export default function SalesRepView({ proposals, users = [], teleapoItems = [] 
   if (proposals.length === 0) {
     return (
       <div className="text-center py-20 text-slate-400">
-        <p className="text-lg mb-2">データがありません</p>
+        <p className="text-lg mb-2">{loading ? '読み込み中…' : 'データがありません'}</p>
         <p className="text-sm">提案リストタブからデータを追加してください</p>
       </div>
     )

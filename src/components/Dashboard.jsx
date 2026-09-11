@@ -106,7 +106,7 @@ function TeleapoTooltipContent({ active, payload }) {
   )
 }
 
-export default function Dashboard({ proposals, teleapoItems = [], onNavigate, onNavigateTeleapo, users = [] }) {
+export default function Dashboard({ proposals, teleapoItems = [], onNavigate, onNavigateTeleapo, users = [], loading = false}) {
   const [dashboardMode, setDashboardMode] = useState('proposals') // 'proposals' | 'teleapo'
   const [selectedRep, setSelectedRep] = useState([])
   const [selectedIndustry, setSelectedIndustry] = useState([])
@@ -1109,7 +1109,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   if (proposals.length === 0 && teleapoItems.length === 0) {
     return (
       <div className="text-center py-20 text-slate-400">
-        <p className="text-lg mb-2">データがありません</p>
+        <p className="text-lg mb-2">{loading ? '読み込み中…' : 'データがありません'}</p>
         <p className="text-sm">提案リストまたはテレアポリストからデータを追加してください</p>
       </div>
     )
@@ -1239,7 +1239,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         <div>
           {teleapoItems.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
-              <p className="text-base mb-1">テレアポデータがありません</p>
+              <p className="text-base mb-1">{loading ? '読み込み中…' : 'テレアポデータがありません'}</p>
               <p className="text-sm">テレアポリストタブからデータを追加してください</p>
             </div>
           ) : (<>
@@ -1688,7 +1688,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         <div>
           {teleapoItems.length === 0 ? (
             <div className="text-center py-16 text-slate-400">
-              <p className="text-base mb-1">テレアポデータがありません</p>
+              <p className="text-base mb-1">{loading ? '読み込み中…' : 'テレアポデータがありません'}</p>
               <p className="text-sm">テレアポリストからデータを追加してください</p>
             </div>
           ) : (
@@ -1921,8 +1921,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       {/* ========== 営業活動 ダッシュボード ========== */}
       {dashboardMode === 'proposals' && proposals.length === 0 && (
         <div className="text-center py-16 text-slate-400">
-          <p className="text-base mb-1">提案データがありません</p>
-          <p className="text-sm">提案リストタブからデータを追加してください</p>
+          <p className="text-base mb-1">{loading ? '読み込み中…' : '提案データがありません'}</p>
+          {!loading && <p className="text-sm">提案リストタブからデータを追加してください</p>}
         </div>
       )}
 
