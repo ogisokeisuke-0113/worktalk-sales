@@ -1,185 +1,133 @@
 import { useState } from 'react'
+import { supabase } from '../lib/supabase'
 
-export default function LoginScreen({ users, onLogin, onRegister }) {
-  const [mode, setMode] = useState(users.length === 0 ? 'register' : 'login')
-  const [selectedUser, setSelectedUser] = useState('')
+/**
+ * ログイン画面（Supabase Auth）
+ *
+ * 以前はユーザー名を選ぶだけで入れた。
+ * users テーブルの password は全員空文字だったうえ、そのテーブル自体が
+ * 匿名キーで誰でも読めたため、URLさえ知っていれば誰にでもなりすませた。
+ * Supabase Auth に移し、DB 側の RLS を authenticated 限定にすることで塞ぐ。
+ */
+export default function LoginScreen({ onAuthed }) {
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [firstName, setFirstName] = useState('')
-  const [newPassword, setNewPassword] = useState('')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [mode, setMode] = useState('login')   // login | reset
+  const [notice, setNotice] = useState('')
 
-  const handleLogin = (e) => {
+  const handleLogin = async e => {
     e.preventDefault()
-    setError('')
-    if (!selectedUser) {
-      setError('ユーザーを選択してください')
-      return
+    setError(''); setNotice(''); setBusy(true)
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+      if (error) {
+        // Supabase の英語メッセージのままだと営業メンバーに伝わらない
+        setError(
+          error.message.includes('Invalid login credentials')
+            ? 'メールアドレスかパスワードが違います'
+            : `ログインできませんでした: ${error.message}`
+        )
+        return
+      }
+      onAuthed(data.session)
+    } catch (e) {
+      setError(`ログインできませんでした: ${e.message}`)
+    } finally {
+      setBusy(false)
     }
-    const user = users.find(u => u.name === selectedUser)
-    if (!user) {
-      setError('ユーザーが見つかりません')
-      return
-    }
-    if (user.password && user.password !== password) {
-      setError('パスワードが正しくありません')
-      return
-    }
-    if (!user.password && password) {
-      setError('パスワードが正しくありません')
-      return
-    }
-    onLogin(user)
   }
 
-  const handleRegister = (e) => {
+  const handleReset = async e => {
     e.preventDefault()
-    setError('')
-    const last = lastName.trim()
-    const first = firstName.trim()
-    if (!last || !first) {
-      setError('苗字と名前の両方を入力してください')
-      return
+    setError(''); setNotice(''); setBusy(true)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin + window.location.pathname,
+      })
+      if (error) setError(`送信できませんでした: ${error.message}`)
+      else setNotice('再設定用のメールを送りました。届かない場合は管理者に連絡してください。')
+    } finally {
+      setBusy(false)
     }
-    const fullName = `${last} ${first}`
-    if (users.some(u => u.name === fullName)) {
-      setError('この名前は既に使用されています')
-      return
-    }
-    const user = {
-      id: crypto.randomUUID(),
-      name: fullName,
-      password: newPassword || '',
-      createdAt: new Date().toISOString(),
-    }
-    onRegister(user)
-    onLogin(user)
   }
+
+  const INPUT = 'w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#2d6a9e] to-[#1a5285] flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">Sales Board</h1>
           <p className="text-white/60 text-sm">営業管理システム</p>
         </div>
 
         <div className="bg-white rounded-xl shadow-2xl p-6">
-          {/* Mode toggle */}
-          {users.length > 0 && (
-            <div className="flex mb-6 bg-slate-100 rounded-lg p-1">
-              <button
-                onClick={() => { setMode('login'); setError('') }}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                  mode === 'login' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                ログイン
-              </button>
-              <button
-                onClick={() => { setMode('register'); setError('') }}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                  mode === 'register' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                新規登録
-              </button>
-            </div>
-          )}
-
           {mode === 'login' ? (
             <form onSubmit={handleLogin}>
               <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  ユーザー
-                </label>
-                <select
-                  value={selectedUser}
-                  onChange={e => setSelectedUser(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent bg-white"
-                >
-                  <option value="">選択してください</option>
-                  {users.map(u => (
-                    <option key={u.id} value={u.name}>{u.name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">メールアドレス</label>
+                <input
+                  type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  autoComplete="username" placeholder="name@my-career.co.jp" className={INPUT}
+                />
               </div>
               <div className="mb-5">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  パスワード
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">パスワード</label>
                 <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="パスワードを入力"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
+                  type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  autoComplete="current-password" placeholder="パスワード" className={INPUT}
                 />
-                <p className="text-xs text-slate-400 mt-1">未設定の場合は空欄でOK</p>
               </div>
-              {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+              {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
               <button
-                type="submit"
-                className="w-full py-2.5 bg-[#2d6a9e] text-white text-sm font-medium rounded-lg hover:bg-[#1a5285] transition-colors"
+                type="submit" disabled={busy || !email || !password}
+                className="w-full py-2.5 bg-[#2d6a9e] text-white text-sm font-medium rounded-lg hover:bg-[#1a5285] transition-colors disabled:opacity-40"
               >
-                ログイン
+                {busy ? 'ログイン中…' : 'ログイン'}
+              </button>
+              <button
+                type="button" onClick={() => { setMode('reset'); setError(''); setNotice('') }}
+                className="w-full mt-3 text-xs text-slate-500 hover:text-slate-700"
+              >
+                パスワードを忘れた
               </button>
             </form>
           ) : (
-            <form onSubmit={handleRegister}>
-              {users.length === 0 && (
-                <p className="text-sm text-slate-600 mb-4 bg-blue-50 p-3 rounded-lg">
-                  初めてのご利用ですね。まずはユーザーを登録してください。
-                </p>
-              )}
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  氏名
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={e => setLastName(e.target.value)}
-                    placeholder="苗字"
-                    className="w-1/2 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
-                  />
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={e => setFirstName(e.target.value)}
-                    placeholder="名前"
-                    className="w-1/2 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
-                  />
-                </div>
-              </div>
+            <form onSubmit={handleReset}>
+              <p className="text-sm text-slate-600 mb-4 bg-blue-50 p-3 rounded-lg">
+                登録しているメールアドレスに、再設定用のリンクを送ります。
+              </p>
               <div className="mb-5">
-                <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  パスワード（任意）
-                </label>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">メールアドレス</label>
                 <input
-                  type="password"
-                  value={newPassword}
-                  onChange={e => setNewPassword(e.target.value)}
-                  placeholder="設定しない場合は空欄"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
+                  type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="name@my-career.co.jp" className={INPUT}
                 />
               </div>
-              {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
+              {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
+              {notice && <p className="text-sm text-emerald-700 mb-3">{notice}</p>}
               <button
-                type="submit"
-                className="w-full py-2.5 bg-[#2d6a9e] text-white text-sm font-medium rounded-lg hover:bg-[#1a5285] transition-colors"
+                type="submit" disabled={busy || !email}
+                className="w-full py-2.5 bg-[#2d6a9e] text-white text-sm font-medium rounded-lg hover:bg-[#1a5285] transition-colors disabled:opacity-40"
               >
-                登録してはじめる
+                {busy ? '送信中…' : '再設定メールを送る'}
+              </button>
+              <button
+                type="button" onClick={() => { setMode('login'); setError(''); setNotice('') }}
+                className="w-full mt-3 text-xs text-slate-500 hover:text-slate-700"
+              >
+                ログインに戻る
               </button>
             </form>
           )}
         </div>
 
-        <p className="text-center text-white/40 text-xs mt-6">
-          &copy; Sales Board
-        </p>
+        <p className="text-center text-white/40 text-xs mt-6">&copy; Sales Board</p>
       </div>
     </div>
   )

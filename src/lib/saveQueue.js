@@ -90,8 +90,12 @@ export function createSaveQueue({ name, api, table, url, key }) {
     } catch (err) {
       // 基準を進めないので、次のフラッシュでも同じ差分が再送される
       q.fail++
-      console.warn(`[wt-save:${name}] 保存に失敗、再試行します:`, err && err.message)
-      emit('error', { msg: err && err.message, n: d.changed.length, fail: q.fail })
+      const msg = (err && err.message) || ''
+      // ログインしていない／セッション切れは、再試行しても永久に通らない。
+      // 「再試行中」と出し続けると気づけないので、はっきり分けて伝える。
+      const isAuth = /JWT|not authorized|permission denied|401|403|row-level security/i.test(msg)
+      console.warn(`[wt-save:${name}] 保存に失敗、再試行します:`, msg)
+      emit(isAuth ? 'authError' : 'error', { msg, n: d.changed.length, fail: q.fail })
       schedule(Math.min(30000, DEFAULT_DELAY * 2 ** Math.min(q.fail, 4)), true)
     } finally {
       q.flushing = false

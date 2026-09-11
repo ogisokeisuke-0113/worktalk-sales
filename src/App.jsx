@@ -223,6 +223,31 @@ function migrateKessaisha(proposals) {
 export default function App() {
   const [users, setUsers] = useState(() => loadUsers())
   const [currentUser, setCurrentUser] = useState(() => loadCurrentUser())
+  const [authReady, setAuthReady] = useState(false)
+
+  // ── ログイン状態は Supabase Auth のセッションを正とする ──
+  // 以前は「名前を選ぶだけ」で、users.password は全員空だった。
+  // さらに users テーブル自体が匿名キーで読めたため、誰にでもなりすませた。
+  useEffect(() => {
+    if (!isSupabaseEnabled) { setAuthReady(true); return }
+    const fromSession = session => {
+      if (!session) return null
+      const m = session.user.user_metadata || {}
+      return {
+        id: m.users_id || session.user.id,
+        name: m.name || session.user.email,
+        email: session.user.email,
+      }
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      setCurrentUser(fromSession(data.session))
+      setAuthReady(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, session) => {
+      setCurrentUser(fromSession(session))
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
   const [activeTab, setActiveTab] = useState('dashboard')
   const [proposalFilter, setProposalFilter] = useState(null)
   const [teleapoFilter, setTeleapoFilter] = useState(null)
@@ -466,17 +491,18 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const handleLogin = (user) => {
-    setCurrentUser(user)
-  }
-
-  const handleRegister = (user) => {
-    setUsers(prev => [...prev, user])
-  }
-
-  const handleLogout = () => {
-    setCurrentUser(null)
+  const handleLogout = async () => {
     setShowUserMenu(false)
+    try { await supabase.auth.signOut() } catch { /* すでに切れている場合は無視 */ }
+    setCurrentUser(null)
+  }
+
+  const handleChangePassword = async () => {
+    const pw = window.prompt('新しいパスワードを入力してください（8文字以上）')
+    if (pw === null) return
+    if (pw.length < 8) { window.alert('8文字以上にしてください'); return }
+    const { error } = await supabase.auth.updateUser({ password: pw })
+    window.alert(error ? `変更できませんでした: ${error.message}` : 'パスワードを変更しました')
   }
 
   const promoteToProposal = (teleapoItem) => {
@@ -516,14 +542,14 @@ export default function App() {
   }
 
   // Show login screen if not logged in
+  // セッション確認が終わるまでは何も出さない。
+  // 出してしまうと一瞬ログイン画面が見えて、既ログインの人を不安にさせる。
+  if (!authReady) {
+    return <div className="min-h-screen bg-gradient-to-br from-[#2d6a9e] to-[#1a5285]" />
+  }
+
   if (!currentUser) {
-    return (
-      <LoginScreen
-        users={users}
-        onLogin={handleLogin}
-        onRegister={handleRegister}
-      />
-    )
+    return <LoginScreen onAuthed={() => { /* onAuthStateChange が拾う */ }} />
   }
 
   return (
@@ -597,8 +623,14 @@ export default function App() {
                   <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50 animate-fade-in">
                     <div className="px-3 py-2 border-b border-slate-100">
                       <p className="text-sm font-medium text-slate-800">{currentUser.name}</p>
-                      <p className="text-xs text-slate-400">ログイン中</p>
+                      <p className="text-xs text-slate-400">{currentUser.email || 'ログイン中'}</p>
                     </div>
+                    <button
+                      onClick={handleChangePassword}
+                      className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      パスワードを変更
+                    </button>
                     <button
                       onClick={handleLogout}
                       className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"

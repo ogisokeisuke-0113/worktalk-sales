@@ -23,6 +23,8 @@ export default function SaveIndicator() {
         hideTimer = setTimeout(() => setState(null), 2200)
       } else if (d.state === 'error') {
         setState({ kind: 'error', n: d.n || 0, msg: d.msg })
+      } else if (d.state === 'authError') {
+        setState({ kind: 'authError', n: d.n || 0, msg: d.msg })
       }
     }
     window.addEventListener('wt-save', onSave)
@@ -42,18 +44,22 @@ export default function SaveIndicator() {
     saving: 'bg-slate-100 text-slate-700 pointer-events-none',
     saved: 'bg-emerald-50 text-emerald-800 pointer-events-none',
     error: 'bg-rose-50 text-rose-800 cursor-pointer',
+    authError: 'bg-amber-50 text-amber-900 cursor-pointer ring-2 ring-amber-400',
   }[state.kind]
 
   return (
     <div
       role="status"
-      onClick={state.kind === 'error' ? retryNow : undefined}
+      onClick={state.kind === 'error' ? retryNow : state.kind === 'authError' ? () => window.location.reload() : undefined}
       className={`fixed right-4 bottom-4 z-[9999] flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium max-w-[82vw] ${style}`}
     >
       {state.kind === 'saving' && <span>保存中… {state.n}件</span>}
       {state.kind === 'saved' && <span>保存しました {state.n}件</span>}
       {state.kind === 'error' && (
         <span>⚠ 保存できていません（未送信 {state.n}件・再試行中）タップで即時再送</span>
+      )}
+      {state.kind === 'authError' && (
+        <span>⚠ ログインが必要です（未送信 {state.n}件）タップして再読み込み → ログインしてください</span>
       )}
     </div>
   )
