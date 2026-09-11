@@ -1,0 +1,80 @@
+name: ビルドして本番へ配信
+
+# main に push すると、ここでビルドして gh-pages へ配信する。
+# 手元で build して dist を手で push する運用をやめるためのもの。
+# これで「配信されているもの = main のあるコミット」が常に成立する。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:      # 手動実行もできる
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-pages     # 同時実行を防ぐ（後勝ちで壊さない）
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: ビルド
+        run: npm run build
+        env:
+          # バンドルに埋め込まれる値なので秘密ではないが、
+          # 差し替えられるよう Repository variables から渡す。
+          # 未設定ならリポジトリの .env.production が使われる（通常はこちら）。
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      # ── 安全装置 ────────────────────────────────────────────
+      # 架電記録の保存修正が入っていないビルドを配信させない。
+      # 2026-09-10 に、修正がソースに無いまま deploy すると
+      # 巻き戻る状態だったため、ここで機械的に止める。
+      - name: 架電記録の保存修正が含まれているか確認
+        run: |
+          if ! grep -q "wt-save" dist/assets/*.js; then
+            echo "::error::架電記録の保存修正がビルド結果に含まれていません。SOURCE-PATCH.md を反映してから push してください。"
+            exit 1
+          fi
+          echo "保存修正の混入を確認しました"
+
+      - name: 接続先のSupabaseプロジェクトを確認
+        run: |
+          EXPECTED="antqewvlzfonsakgndxt.supabase.co"
+          if ! grep -q "$EXPECTED" dist/assets/*.js; then
+            echo "::error::ビルド結果が本番のSupabaseプロジェクト($EXPECTED)を向いていません。"
+            echo "::error::.env.production / リポジトリ変数 VITE_SUPABASE_URL を確認してください。"
+            echo "::error::別プロジェクト(arhgxtdwnsciwmotvokl)を向いたまま配信すると、全員が空のDBに繋がります。"
+            exit 1
+          fi
+          echo "接続先OK: $EXPECTED"
+
+      - name: gh-pages へ配信
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages
+          git worktree add /tmp/pages gh-pages
+          # 過去のバンドルは消さない。配信直後、古いHTMLを掴んでいる人が
+          # 古いJSを取りに来ることがあるため。
+          cp -R dist/. /tmp/pages/
+          cd /tmp/pages
+          git add -A
+          if git diff --cached --quiet; then
+            echo "変更なし。配信をスキップします"
+          else
+            git commit -m "deploy: ${{ github.sha }}"
+            git push origin gh-pages
+          fi
