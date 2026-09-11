@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { useToast } from './Toast'
-import { useConfirm } from './ConfirmDialog'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent'
 
@@ -30,13 +28,30 @@ function TemplateEditor({ template, onSave, onCancel }) {
   )
 }
 
-export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync }) {
-  const { showToast } = useToast()
-  const confirm = useConfirm()
+export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync, onImportTeleapo }) {
   const [newUserName, setNewUserName] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
   const [userError, setUserError] = useState('')
   const [userSuccess, setUserSuccess] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+
+  const handleTeleapoJsonImport = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result)
+        if (!Array.isArray(data)) throw new Error('配列形式ではありません')
+        onImportTeleapo(data)
+        setImportStatus(`✅ ${data.length}件をインポートしました`)
+      } catch (err) {
+        setImportStatus(`❌ エラー: ${err.message}`)
+      }
+    }
+    reader.readAsText(file, 'utf-8')
+    e.target.value = ''
+  }
 
   const handleAddUser = () => {
     setUserError('')
@@ -52,20 +67,12 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
     setTimeout(() => setUserSuccess(''), 2000)
   }
 
-  const handleDeleteUser = async (userId) => {
+  const handleDeleteUser = (userId) => {
     if (userId === currentUser?.id) return
     const user = users.find(u => u.id === userId)
-    if (!user) return
-    const ok = await confirm({
-      title: 'ユーザーを削除',
-      message: `${user.name} を削除します。よろしいですか？`,
-      confirmText: '削除',
-      cancelText: 'キャンセル',
-      variant: 'danger',
-    })
-    if (!ok) return
-    setUsers(prev => prev.filter(u => u.id !== userId))
-    showToast(`${user.name} を削除しました`, 'success')
+    if (confirm(`${user.name} を削除しますか？`)) {
+      setUsers(prev => prev.filter(u => u.id !== userId))
+    }
   }
 
   const [urlInput, setUrlInput] = useState(settings.sheetSyncUrl || '')
@@ -88,17 +95,10 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
   // メール送信設定
   const [fromInput, setFromInput] = useState(settings.emailFrom || 'noreply@work-talk.jp')
   const [senderNameInput, setSenderNameInput] = useState(settings.emailSenderName || 'WorkTalk営業チーム')
-  const [mailGasUrlInput, setMailGasUrlInput] = useState(settings.mailGasUrl || '')
   const [emailSettingSaved, setEmailSettingSaved] = useState(false)
   const handleSaveEmailSettings = () => {
-    setSettings(prev => ({
-      ...prev,
-      emailFrom: fromInput.trim(),
-      emailSenderName: senderNameInput.trim(),
-      mailGasUrl: mailGasUrlInput.trim(),
-    }))
+    setSettings(prev => ({ ...prev, emailFrom: fromInput.trim(), emailSenderName: senderNameInput.trim() }))
     setEmailSettingSaved(true)
-    showToast('メール設定を保存しました', 'success')
     setTimeout(() => setEmailSettingSaved(false), 2000)
   }
 
@@ -112,22 +112,10 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
       : templates.map(t => t.id === form.id ? form : t)
     setSettings(prev => ({ ...prev, emailTemplates: updated }))
     setEditingTemplate(null)
-    showToast(isNew ? 'テンプレートを追加しました' : 'テンプレートを更新しました', 'success')
   }
-  const handleDeleteTemplate = async (id) => {
-    const target = templates.find(t => t.id === id)
-    const ok = await confirm({
-      title: 'テンプレートを削除',
-      message: target?.name
-        ? `「${target.name}」を削除します。よろしいですか？`
-        : 'このテンプレートを削除します。よろしいですか？',
-      confirmText: '削除',
-      cancelText: 'キャンセル',
-      variant: 'danger',
-    })
-    if (!ok) return
+  const handleDeleteTemplate = (id) => {
+    if (!confirm('このテンプレートを削除しますか？')) return
     setSettings(prev => ({ ...prev, emailTemplates: (prev.emailTemplates || []).filter(t => t.id !== id) }))
-    showToast('テンプレートを削除しました', 'success')
   }
 
   return (
@@ -214,25 +202,6 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
             <input type="text" value={senderNameInput} onChange={e => setSenderNameInput(e.target.value)} className={INPUT} placeholder="WorkTalk営業チーム" />
           </div>
         </div>
-
-        {/* Sales Board メール送信用 GAS URL (Wave 3) */}
-        <div className="mb-4">
-          <label className="block text-xs font-medium text-slate-600 mb-1">
-            Sales Board メール送信用 GAS Web App URL
-          </label>
-          <input
-            type="url"
-            value={mailGasUrlInput}
-            onChange={e => setMailGasUrlInput(e.target.value)}
-            placeholder="https://script.google.com/macros/s/xxxxx/exec"
-            className={INPUT}
-          />
-          <p className="text-[11px] text-slate-400 mt-1">
-            CSVアップ時の新規企業へのメール送信（SendGrid経由）と Event Webhook 受信で使用する GAS Web App の URL。
-            スプレッドシート同期の GAS（上）とは別プロジェクト。
-          </p>
-        </div>
-
         <div className="flex justify-end mb-6">
           <button onClick={handleSaveEmailSettings} className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors">
             {emailSettingSaved ? '保存済み ✓' : '保存'}
@@ -324,6 +293,19 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
           {userSuccess && <p className="text-sm text-green-600 mt-2">{userSuccess}</p>}
         </div>
       </div>
+
+      {/* テレアポリスト JSONインポート */}
+      {onImportTeleapo && (
+        <div className="border border-slate-200 rounded-lg p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-1">テレアポリスト 一括インポート</h3>
+          <p className="text-xs text-slate-400 mb-3">JSONファイルを読み込んで既存データを置き換えます</p>
+          <label className="inline-block cursor-pointer px-4 py-2 bg-slate-700 text-white text-sm rounded-md hover:bg-slate-800 transition-colors">
+            JSONファイルを選択
+            <input type="file" accept=".json" className="hidden" onChange={handleTeleapoJsonImport} />
+          </label>
+          {importStatus && <p className="text-sm mt-2 text-slate-600">{importStatus}</p>}
+        </div>
+      )}
     </div>
   )
 }

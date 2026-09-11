@@ -14,7 +14,11 @@ export function loadProposals() {
 }
 
 export function saveProposals(proposals) {
-  localStorage.setItem(PROPOSALS_KEY, JSON.stringify(proposals))
+  try {
+    localStorage.setItem(PROPOSALS_KEY, JSON.stringify(proposals))
+  } catch (e) {
+    console.warn('[storage] saveProposals: localStorage quota exceeded, skipping cache')
+  }
 }
 
 export function loadTeleapo() {
@@ -27,7 +31,11 @@ export function loadTeleapo() {
 }
 
 export function saveTeleapo(items) {
-  localStorage.setItem(TELEAPO_KEY, JSON.stringify(items))
+  try {
+    localStorage.setItem(TELEAPO_KEY, JSON.stringify(items))
+  } catch (e) {
+    console.warn('[storage] saveTeleapo: localStorage quota exceeded, skipping cache')
+  }
 }
 
 export function loadSettings() {
@@ -36,7 +44,6 @@ export function loadSettings() {
     const defaults = {
       apiKey: '',
       sheetSyncUrl: '',
-      mailGasUrl: '',
       emailFrom: 'noreply@work-talk.jp',
       emailSenderName: 'WorkTalk営業チーム',
       emailTemplates: [

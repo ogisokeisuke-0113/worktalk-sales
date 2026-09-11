@@ -5,8 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line,
 } from 'recharts'
-import { FUNNEL_COLORS, EMPLOYEE_SCALES } from '../constants'
-import EmptyState from './EmptyState'
+import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES } from '../constants'
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
@@ -112,6 +111,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   const [selectedRep, setSelectedRep] = useState([])
   const [selectedIndustry, setSelectedIndustry] = useState([])
   const [selectedRelationship, setSelectedRelationship] = useState([])
+  const [selectedService, setSelectedService] = useState([])
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [decisionMakerFilter, setDecisionMakerFilter] = useState('')  // '' | 'yes' | 'no'
@@ -136,6 +136,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     onNavigateTeleapo?.({
       ...extra,
       _teleapoRepFilter: teleapoRepFilter,
+      callDateFrom: teleapoDateFrom || '',
+      callDateTo: teleapoDateTo || '',
     })
   }
 
@@ -160,14 +162,15 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     if (selectedRep.length) result = result.filter(p => selectedRep.includes(p.salesRep))
     if (selectedIndustry.length) result = result.filter(p => selectedIndustry.includes(p.industry))
     if (selectedRelationship.length) result = result.filter(p => selectedRelationship.includes(p.relationship))
+    if (selectedService.length) result = result.filter(p => selectedService.includes(p.service))
     if (dateFrom) result = result.filter(p => p.initialDate && p.initialDate >= dateFrom)
     if (dateTo) result = result.filter(p => p.initialDate && p.initialDate <= dateTo)
     if (decisionMakerFilter === 'yes') result = result.filter(p => p.decisionMakerDate)
     if (decisionMakerFilter === 'no') result = result.filter(p => !p.decisionMakerDate)
     return result
-  }, [proposals, selectedRep, selectedIndustry, selectedRelationship, dateFrom, dateTo, decisionMakerFilter])
+  }, [proposals, selectedRep, selectedIndustry, selectedRelationship, selectedService, dateFrom, dateTo, decisionMakerFilter])
 
-  const hasActiveFilter = selectedRep.length > 0 || selectedIndustry.length > 0 || selectedRelationship.length > 0 || dateFrom || dateTo || decisionMakerFilter
+  const hasActiveFilter = selectedRep.length > 0 || selectedIndustry.length > 0 || selectedRelationship.length > 0 || selectedService.length > 0 || dateFrom || dateTo || decisionMakerFilter
 
   const stats = useMemo(() => {
     const wonStatuses = ['受注', '決裁者合意']
@@ -179,8 +182,10 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     ).length
     const lost = filtered.filter(p => p.status === '失注').length
     const winRate = proposals > 0 ? ((won / proposals) * 100).toFixed(1) : 0
+    // 受注企業数: サービスに関わらず ≥1 受注ステータスの行がある企業のユニーク数
+    const wonCompanies = new Set(filtered.filter(p => p.status === '受注').map(p => p.companyName)).size
 
-    return { total: proposals, won, winRate, appoConfirmed, inProgress, lost }
+    return { total: proposals, won, wonCompanies, winRate, appoConfirmed, inProgress, lost }
   }, [filtered])
 
   const monthlyData = useMemo(() => {
@@ -259,6 +264,21 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       }))
       .filter(d => d.rate > 0)
       .sort((a, b) => b.wilson - a.wilson)
+  }, [filtered])
+
+  const serviceData = useMemo(() => {
+    const map = {}
+    const wonStatuses = ['受注', '決裁者合意']
+    filtered.filter(p => p.status !== 'アポ確定').forEach(p => {
+      const key = p.service || '(未設定)'
+      if (!map[key]) map[key] = { name: key, denominator: 0, won: 0 }
+      map[key].denominator++
+      if (wonStatuses.includes(p.status)) map[key].won++
+    })
+    return Object.values(map)
+      .map(d => ({ ...d, rate: d.denominator > 0 ? Number(((d.won / d.denominator) * 100).toFixed(1)) : 0 }))
+      .filter(d => d.denominator > 0)
+      .sort((a, b) => b.denominator - a.denominator)
   }, [filtered])
 
   const scaleData = useMemo(() => {
@@ -457,11 +477,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
 
   // ──── テレアポ分析データ ────
   const teleapoSalesReps = useMemo(() => {
-    const set = new Set(users.map(u => u.name))
-    teleapoItems.forEach(i => { if (i.salesRep) set.add(i.salesRep) })
-    proposals.forEach(p => { if (p.salesRep) set.add(p.salesRep) })
-    return [...set].sort()
-  }, [teleapoItems, proposals, users])
+    return users.map(u => u.name).filter(Boolean).sort()
+  }, [users])
 
   const [teleapoRepFilter, setTeleapoRepFilter] = useState([])
   const [teleapoIndustryFilter, setTeleapoIndustryFilter] = useState([])
@@ -473,9 +490,18 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   const [emailDateTo, setEmailDateTo] = useState('')
 
   const teleapoFiltered = useMemo(() => {
-    if (!teleapoRepFilter.length) return teleapoItems
-    return teleapoItems.filter(i => teleapoRepFilter.includes(i.salesRep))
-  }, [teleapoItems, teleapoRepFilter])
+    // チャネル未設定 or '新規' のみテレアポKPIに含める（既存CL・前職CL等は除外）
+    let result = teleapoItems.filter(i => !i.channel || i.channel === '新規')
+    if (teleapoRepFilter.length) {
+      // salesRep（担当割当）またはcallHistoryのcaller（架電者）どちらかが一致する企業を含める
+      result = result.filter(i =>
+        teleapoRepFilter.includes(i.salesRep) ||
+        (i.callHistory || []).some(c => teleapoRepFilter.includes(c.caller))
+      )
+    }
+    if (teleapoIndustryFilter.length) result = result.filter(i => teleapoIndustryFilter.includes(i.industry))
+    return result
+  }, [teleapoItems, teleapoRepFilter, teleapoIndustryFilter])
 
   const allIndustries = useMemo(() => {
     const set = new Set()
@@ -496,12 +522,14 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     })
   }, [teleapoItems, emailIndustryFilter, emailDateFrom, emailDateTo])
 
-  // 架電日時で絞り込んだ版（callHistoryのみフィルタ、企業リストは全件）
+  // 架電日時・架電者で絞り込んだ版（callHistoryのみフィルタ、企業リストは全件）
   const teleapoCallFiltered = useMemo(() => {
-    if (!teleapoDateFrom && !teleapoDateTo) return teleapoFiltered
+    if (!teleapoDateFrom && !teleapoDateTo && !teleapoRepFilter.length) return teleapoFiltered
     return teleapoFiltered.map(item => ({
       ...item,
       callHistory: (item.callHistory || []).filter(c => {
+        // 担当フィルターがある場合、callerが一致する架電のみカウント
+        if (teleapoRepFilter.length > 0 && !teleapoRepFilter.includes(c.caller)) return false
         if (!c.date) return false
         const day = c.date.slice(0, 10)
         if (teleapoDateFrom && day < teleapoDateFrom) return false
@@ -509,7 +537,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         return true
       }),
     }))
-  }, [teleapoFiltered, teleapoDateFrom, teleapoDateTo])
+  }, [teleapoFiltered, teleapoRepFilter, teleapoDateFrom, teleapoDateTo])
 
   const teleapoStats = useMemo(() => {
     const total = teleapoFiltered.length
@@ -518,26 +546,76 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const kept = teleapoFiltered.filter(i => i.isKept).length
     const called = teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).length
     const uncalled = total - called
-    const appoConfirmed = teleapoFiltered.filter(i => i.status === 'アポ確定').length
-    const totalKeeps = teleapoFiltered.reduce((s, i) => s + (i.keepHistory || []).length, 0)
+    const appoConfirmed = teleapoFiltered.filter(i => {
+      if (i.status !== 'アポ確定') return false
+      if (!teleapoDateFrom && !teleapoDateTo) return true
+      const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
+      if (!appoDate) return false  // アポ日不明は期間外として除外
+      const d = appoDate.slice(0, 10)
+      if (teleapoDateFrom && d < teleapoDateFrom) return false
+      if (teleapoDateTo && d > teleapoDateTo) return false
+      return true
+    }).length
+    const totalKeeps = teleapoFiltered.reduce((s, i) => {
+      const keeps = (i.keepHistory || []).filter(k => {
+        if (!teleapoDateFrom && !teleapoDateTo) return true
+        const day = (k.at || '').slice(0, 10)
+        if (!day) return false
+        if (teleapoDateFrom && day < teleapoDateFrom) return false
+        if (teleapoDateTo && day > teleapoDateTo) return false
+        return true
+      })
+      return s + keeps.length
+    }, 0)
     const connected = allCalls.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
     const connectionRate = totalCalls > 0 ? Number(((connected / totalCalls) * 100).toFixed(1)) : 0
     const digestRate = total > 0 ? Number(((called / total) * 100).toFixed(1)) : 0
     const appoRate = called > 0 ? Number(((appoConfirmed / called) * 100).toFixed(1)) : 0
     return { total, totalCalls, kept, called, uncalled, appoConfirmed, totalKeeps, connectionRate, digestRate, appoRate }
-  }, [teleapoFiltered, teleapoCallFiltered])
+  }, [teleapoFiltered, teleapoCallFiltered, teleapoDateFrom, teleapoDateTo])
+
+  // 日付フィルター済みアポ確定リスト（アポ獲得日が期間内）
+  const teleapoAppoFiltered = useMemo(() => {
+    return teleapoFiltered.filter(i => {
+      if (i.status !== 'アポ確定') return false
+      if (!teleapoDateFrom && !teleapoDateTo) return true
+      const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
+      if (!appoDate) return false
+      const d = appoDate.slice(0, 10)
+      if (teleapoDateFrom && d < teleapoDateFrom) return false
+      if (teleapoDateTo && d > teleapoDateTo) return false
+      return true
+    })
+  }, [teleapoFiltered, teleapoDateFrom, teleapoDateTo])
 
   // ファネル（登録 → 架電済 → アポ確定）
   const teleapoFunnel = useMemo(() => {
     const total = teleapoFiltered.length
     const called = teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).length
-    const appo = teleapoFiltered.filter(i => i.status === 'アポ確定').length
+    const appo = teleapoAppoFiltered.length
     return [
       { label: '登録企業', value: total, rate: null },
       { label: '架電済', value: called, rate: total > 0 ? Number(((called / total) * 100).toFixed(1)) : 0 },
       { label: 'アポ確定', value: appo, rate: called > 0 ? Number(((appo / called) * 100).toFixed(1)) : 0 },
     ]
-  }, [teleapoFiltered, teleapoCallFiltered])
+  }, [teleapoFiltered, teleapoCallFiltered, teleapoAppoFiltered])
+
+  // 月別アポ獲得件数（担当別）
+  const teleapoAppoByMonth = useMemo(() => {
+    const map = {}
+    // 担当フィルターは適用、日付フィルターは適用しない（月別トレンドを全期間で表示）
+    const base = teleapoFiltered.filter(i => i.status === 'アポ確定')
+    base.forEach(item => {
+      const appoDate = item.appoDate || (item.callHistory || []).find(c => c.result === 'アポ獲得')?.date
+      if (!appoDate) return
+      const month = String(appoDate).slice(0, 7) // YYYY-MM
+      const rep = item.salesRep || '未確定'
+      if (!map[month]) map[month] = { month, total: 0 }
+      map[month].total++
+      map[month][rep] = (map[month][rep] || 0) + 1
+    })
+    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month))
+  }, [teleapoFiltered])
 
   // 週別架電推移（結果別積み上げ）
   const teleapoWeekly = useMemo(() => {
@@ -547,8 +625,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       if (!c.date) return
       const d = new Date(c.date)
       const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7))
-      const key = mon.toISOString().slice(0, 10)
-      const label = `${mon.getMonth() + 1}/${mon.getDate()}`
+      const key = `${mon.getFullYear()}-${String(mon.getMonth() + 1).padStart(2, '0')}-${String(mon.getDate()).padStart(2, '0')}`
+      const label = `${mon.getFullYear() !== new Date().getFullYear() ? mon.getFullYear() + '/' : ''}${mon.getMonth() + 1}/${mon.getDate()}`
       if (!map[key]) map[key] = { week: key, label, total: 0 }
       const r = c.result || '不明'
       map[key][r] = (map[key][r] || 0) + 1
@@ -580,7 +658,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       map[key].calls += history.length
       map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
     })
-    teleapoFiltered.filter(i => i.status === 'アポ確定').forEach(item => {
+    teleapoAppoFiltered.forEach(item => {
       const key = item.industry || '(未設定)'
       if (teleapoIndustryFilter.length > 0 && !teleapoIndustryFilter.includes(key)) return
       if (map[key]) map[key].appo++
@@ -592,7 +670,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0,
       }))
       .sort((a, b) => b.companies - a.companies)
-  }, [teleapoCallFiltered, teleapoFiltered, teleapoIndustryFilter])
+  }, [teleapoCallFiltered, teleapoAppoFiltered, teleapoIndustryFilter])
 
   const teleapoByScale = useMemo(() => {
     const map = {}
@@ -605,7 +683,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       map[key].calls += history.length
       map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
     })
-    teleapoFiltered.filter(i => i.status === 'アポ確定').forEach(item => {
+    teleapoAppoFiltered.forEach(item => {
       const key = item.employeeScale || '(未設定)'
       if (map[key]) map[key].appo++
     })
@@ -620,40 +698,69 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         const numB = parseInt(b.name) || 9999
         return numA - numB
       })
-  }, [teleapoCallFiltered, teleapoFiltered])
+  }, [teleapoCallFiltered, teleapoAppoFiltered])
 
   const teleapoByRep = useMemo(() => {
     const map = {}
-    // 架電済み企業のみ担当別集計（母数を統一）
+    const ensureKey = (key) => {
+      if (!map[key]) map[key] = { name: key, calls: 0, companySet: new Set(), keeps: 0, connected: 0, appoConfirmed: 0 }
+    }
+    // 架電記録をcaller（架電者）で集計
     teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).forEach(item => {
-      const key = item.salesRep || '(未設定)'
-      if (!map[key]) map[key] = { name: key, calls: 0, companies: 0, keeps: 0, connected: 0, appoConfirmed: 0 }
-      map[key].companies++
-      const history = item.callHistory || []
-      map[key].calls += history.length
-      map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+      ;(item.callHistory || []).forEach(c => {
+        const key = c.caller || '未確定'
+        ensureKey(key)
+        map[key].calls++
+        map[key].companySet.add(item.id)
+        if (!['不在', '受付ブロック'].includes(c.result)) map[key].connected++
+      })
     })
     teleapoFiltered.forEach(item => {
       ;(item.keepHistory || []).forEach(k => {
-        const key = k.by || '(未設定)'
-        if (!map[key]) map[key] = { name: key, calls: 0, companies: 0, keeps: 0, connected: 0, heard: 0, appoConfirmed: 0 }
+        if (teleapoDateFrom || teleapoDateTo) {
+          const day = (k.at || '').slice(0, 10)
+          if (!day) return
+          if (teleapoDateFrom && day < teleapoDateFrom) return
+          if (teleapoDateTo && day > teleapoDateTo) return
+        }
+        const key = k.by || '未確定'
+        ensureKey(key)
         map[key].keeps++
       })
+      // アポ確定数：callerベース（自分が架電した企業がアポ確定になった数）で集計
       if (item.status === 'アポ確定') {
-        const key = item.salesRep || '(未設定)'
-        if (map[key]) map[key].appoConfirmed++
+        const appoDate = item.appoDate || (item.callHistory || []).find(c => c.result === 'アポ獲得')?.date
+        if (teleapoDateFrom || teleapoDateTo) {
+          if (appoDate) {
+            const day = appoDate.slice(0, 10)
+            if (teleapoDateFrom && day < teleapoDateFrom) return
+            if (teleapoDateTo && day > teleapoDateTo) return
+          } else {
+            return
+          }
+        }
+        // アポ獲得の架電をしたcallerのみに加算
+        const appoCall = (item.callHistory || []).find(c => c.result === 'アポ獲得')
+        if (appoCall?.caller) {
+          ensureKey(appoCall.caller)
+          map[appoCall.caller].appoConfirmed++
+        }
       }
     })
     return Object.values(map)
-      .map(d => ({
-        ...d,
-        connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0,
-        appoRate: d.companies > 0 ? Number(((d.appoConfirmed / d.companies) * 100).toFixed(1)) : 0,
-        avgCalls: d.companies > 0 ? Number((d.calls / d.companies).toFixed(1)) : 0,
-      }))
+      .map(d => {
+        const companies = d.companySet.size
+        return {
+          ...d,
+          companies,
+          connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0,
+          appoRate: d.calls > 0 ? Number(((d.appoConfirmed / d.calls) * 100).toFixed(1)) : 0,
+          avgCalls: companies > 0 ? Number((d.calls / companies).toFixed(1)) : 0,
+        }
+      })
       .filter(d => d.calls > 0 || d.keeps > 0)
       .sort((a, b) => b.calls - a.calls)
-  }, [teleapoCallFiltered, teleapoFiltered])
+  }, [teleapoCallFiltered, teleapoFiltered, teleapoDateFrom, teleapoDateTo])
 
   const teleapoDaily = useMemo(() => {
     const allCalls = teleapoCallFiltered.flatMap(i => i.callHistory || [])
@@ -707,7 +814,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       map[ind][sc].calls += history.length
       map[ind][sc].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
     })
-    teleapoFiltered.filter(i => i.status === 'アポ確定').forEach(item => {
+    teleapoAppoFiltered.forEach(item => {
       const ind = item.industry || '(未設定)'
       if (teleapoIndustryFilter.length > 0 && !teleapoIndustryFilter.includes(ind)) return
       const sc = item.employeeScale || '(未設定)'
@@ -725,15 +832,25 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     ;[...scSet].filter(s => !EMPLOYEE_SCALES.includes(s)).forEach(s => scales.push(s))
 
     return { map, industries, scales }
-  }, [teleapoCallFiltered, teleapoFiltered, teleapoIndustryFilter])
+  }, [teleapoCallFiltered, teleapoAppoFiltered, teleapoIndustryFilter])
 
   // Keep転換統計
   const teleapoKeepStats = useMemo(() => {
-    const everKept = teleapoFiltered.filter(i => (i.keepHistory || []).length > 0)
-    const appoFromKept = everKept.filter(i => i.status === 'アポ確定').length
+    const everKept = teleapoFiltered.filter(i => {
+      const keeps = (i.keepHistory || []).filter(k => {
+        if (!teleapoDateFrom && !teleapoDateTo) return true
+        const day = (k.at || '').slice(0, 10)
+        if (!day) return false
+        if (teleapoDateFrom && day < teleapoDateFrom) return false
+        if (teleapoDateTo && day > teleapoDateTo) return false
+        return true
+      })
+      return keeps.length > 0
+    })
+    const appoFromKept = everKept.filter(i => teleapoAppoFiltered.some(a => a.id === i.id)).length
     const keepConvRate = everKept.length > 0 ? Number(((appoFromKept / everKept.length) * 100).toFixed(1)) : 0
     return { everKept: everKept.length, appoFromKept, keepConvRate }
-  }, [teleapoFiltered])
+  }, [teleapoFiltered, teleapoAppoFiltered, teleapoDateFrom, teleapoDateTo])
 
   // メール分析統計
   const emailStats = useMemo(() => {
@@ -991,28 +1108,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
 
   if (proposals.length === 0 && teleapoItems.length === 0) {
     return (
-      <div className="bg-white rounded-lg shadow">
-        <EmptyState
-          variant="chart"
-          title="ダッシュボードに表示するデータがありません"
-          message={"提案リストまたはテレアポリストから\nデータを追加すると、ここに集計グラフが表示されます"}
-          action={
-            <div className="flex flex-wrap gap-2 justify-center">
-              <button
-                onClick={() => onNavigate?.({})}
-                className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors"
-              >
-                提案リストへ
-              </button>
-              <button
-                onClick={() => onNavigateTeleapo?.({})}
-                className="px-4 py-2 bg-[#0f766e] text-white text-sm rounded-md hover:bg-[#0a5c56] transition-colors"
-              >
-                テレアポリストへ
-              </button>
-            </div>
-          }
-        />
+      <div className="text-center py-20 text-slate-400">
+        <p className="text-lg mb-2">データがありません</p>
+        <p className="text-sm">提案リストまたはテレアポリストからデータを追加してください</p>
       </div>
     )
   }
@@ -1063,6 +1161,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             {relationships.length > 0 && (
               <MultiSelect label="チャネル" selected={selectedRelationship} onChange={setSelectedRelationship} options={relationships} placeholder="全チャネル" />
             )}
+            <MultiSelect label="サービス" selected={selectedService} onChange={setSelectedService} options={PROPOSAL_SERVICES} placeholder="全サービス" />
             <label className="inline-flex items-center gap-1.5 cursor-pointer">
               <input type="checkbox" checked={decisionMakerFilter === 'yes'}
                 onChange={e => setDecisionMakerFilter(e.target.checked ? 'yes' : '')}
@@ -1078,7 +1177,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                 className={`text-sm border rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-blue-400 ${dateTo ? 'border-blue-300 text-blue-700 bg-blue-50' : 'border-slate-200 text-slate-700'}`} />
             </div>
             {hasActiveFilter && (
-              <button onClick={() => { setSelectedRep([]); setSelectedIndustry([]); setSelectedRelationship([]); setDecisionMakerFilter(''); setDateFrom(''); setDateTo('') }}
+              <button onClick={() => { setSelectedRep([]); setSelectedIndustry([]); setSelectedRelationship([]); setSelectedService([]); setDecisionMakerFilter(''); setDateFrom(''); setDateTo('') }}
                 className="text-xs text-red-400 hover:text-red-600 px-2 py-1.5 rounded hover:bg-red-50 whitespace-nowrap">全解除</button>
             )}
           </div>
@@ -1145,42 +1244,6 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             </div>
           ) : (<>
 
-            {/* ── ファネル KPI ── */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-5">
-              <p className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">架電ファネル</p>
-              <div className="flex items-stretch gap-0">
-                {teleapoFunnel.map((step, i) => (
-                  <div key={step.label} className="flex items-center flex-1 min-w-0">
-                    <div className={`flex-1 rounded-xl px-4 py-3 text-center ${
-                      i === 0 ? 'bg-slate-100' :
-                      i === 1 ? 'bg-sky-50 border border-sky-200' :
-                      i === 2 ? 'bg-teal-50 border border-teal-200' :
-                      'bg-purple-50 border border-purple-200'
-                    }`}>
-                      <p className={`text-[11px] font-medium mb-1 ${
-                        i === 0 ? 'text-slate-500' :
-                        i === 1 ? 'text-sky-600' :
-                        i === 2 ? 'text-teal-600' :
-                        'text-purple-600'
-                      }`}>{step.label}</p>
-                      <p className={`text-2xl font-bold ${
-                        i === 0 ? 'text-slate-700' :
-                        i === 1 ? 'text-sky-700' :
-                        i === 2 ? 'text-teal-700' :
-                        'text-purple-700'
-                      }`}>{step.value}<span className="text-sm font-normal ml-0.5">社</span></p>
-                      {step.rate !== null && (
-                        <p className="text-[10px] text-slate-400 mt-0.5">前段比 {step.rate}%</p>
-                      )}
-                    </div>
-                    {i < teleapoFunnel.length - 1 && (
-                      <div className="text-slate-300 text-xl mx-1 shrink-0">›</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* ── KPI カード ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
               <KpiCard label="登録企業" value={teleapoStats.total} suffix="社" />
@@ -1189,7 +1252,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               <KpiCard label="接続率" value={teleapoStats.connectionRate} suffix="%" color="green"
                 sub="不在・受付ブロック除く" />
               <KpiCard label="アポ確定" value={teleapoStats.appoConfirmed} suffix="社" color="purple"
-                sub={`確定率 ${teleapoStats.appoRate}%（架電済比）`} />
+                sub={`確定率 ${teleapoStats.appoRate}%（架電済比）`}
+                onClick={() => navigateTeleapoWithFilters({ status: ['アポ確定'] })} />
             </div>
             <div className="grid grid-cols-4 gap-4 mb-5">
               <KpiCard label="架電済" value={teleapoStats.called} suffix="社" color="blue" small />
@@ -1198,6 +1262,29 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               <KpiCard label="Keep転換率" value={teleapoKeepStats.keepConvRate} suffix="%" color="purple" small
                 sub={`Keep企業 ${teleapoKeepStats.everKept}社`} />
             </div>
+
+            {/* ── 月別アポ獲得件数 ── */}
+            {teleapoAppoByMonth.length > 0 && (() => {
+              const REP_COLORS = ['#2d6a9e', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#64748b']
+              const repKeys = [...new Set(teleapoAppoByMonth.flatMap(m => Object.keys(m).filter(k => !['month', 'total'].includes(k))))]
+              return (
+                <ChartCard title="月別アポ獲得件数" sub="担当別内訳 ｜ 期間フィルター対象外（全期間）">
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={teleapoAppoByMonth} margin={{ right: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
+                        formatter={(value, name) => [value + '件', name]} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                      {repKeys.map((rep, i) => (
+                        <Bar key={rep} dataKey={rep} stackId="a" fill={REP_COLORS[i % REP_COLORS.length]} name={rep} />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )
+            })()}
 
             {/* ── 週別架電推移（結果別積み上げ） ── */}
             {teleapoWeekly.length > 0 && (() => {
@@ -1842,10 +1929,11 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       {dashboardMode === 'proposals' && proposals.length > 0 && (<>
 
       {/* KPI Cards - Top Row: Main Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-5 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-5 mb-5">
         <KpiCard label="提案数" value={stats.total} suffix="件" onClick={() => navigateWithFilters({})} />
         <KpiCard label="アポ確定" value={stats.appoConfirmed} suffix="件" color="blue" onClick={() => navigateWithFilters({ status: 'アポ確定' })} />
-        <KpiCard label="受注" value={stats.won} suffix="件" sub={`受注率 ${stats.winRate}%`} color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
+        <KpiCard label="受注（件数）" value={stats.won} suffix="件" sub={`受注率 ${stats.winRate}%`} color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
+        <KpiCard label="受注企業数" value={stats.wonCompanies} suffix="社" color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
         <KpiCard label="進行中" value={stats.inProgress} suffix="件" color="amber" onClick={() => navigateWithFilters({ status: '進行中' })} />
         <KpiCard label="失注" value={stats.lost} suffix="件" color="red" onClick={() => navigateWithFilters({ status: '失注' })} />
       </div>
@@ -2143,6 +2231,24 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                     return <ClickableBar {...props} fill={navyByValue(props.payload?.rate || 0, scaleMax)}
                       onClick={() => navigateWithFilters({ employeeScale: props.payload?.name })} />
                   }}>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        )}
+
+        {serviceData.length > 0 && (
+          <ChartCard title="サービス別 提案数 / 受注率">
+            <ResponsiveContainer width="100%" height={Math.max(180, serviceData.length * 36 + 40)}>
+              <BarChart data={serviceData} layout="vertical" margin={{ left: 0, right: 50 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={80} />
+                <Tooltip content={<RateTooltipContent />} />
+                <Bar dataKey="denominator" name="提案数" fill="#b8cfe0" radius={[0, 3, 3, 0]}>
+                  {serviceData.map((d, i) => (
+                    <Cell key={i} fill={navyByValue(d.denominator, Math.max(...serviceData.map(x => x.denominator), 1))} />
+                  ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>

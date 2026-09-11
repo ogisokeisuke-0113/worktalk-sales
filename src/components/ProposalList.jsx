@@ -1,19 +1,18 @@
 import { useState, useMemo, useEffect } from 'react'
-import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, STATUS_COLORS } from '../constants'
+import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, STATUS_COLORS, PROPOSAL_SERVICES } from '../constants'
 import ProposalSidePanel from './ProposalModal'
 import CsvImportModal from './CsvImportModal'
 import KanbanBoard from './KanbanBoard'
 import MultiSelect from './MultiSelect'
-import EmptyState from './EmptyState'
-import { useToast } from './Toast'
-import { useConfirm } from './ConfirmDialog'
 
 function exportCsv(proposals) {
-  const headers = ['初回提案日時','企業名','営業担当','担当者','業種','従業員規模','優先フラグ','その他','役職','提案状況','決裁者アポ日','結論日','チャネル','失注理由','失注理由詳細','備考']
+  const headers = ['初回提案日時','企業名','営業担当','担当者','業種','従業員規模','優先フラグ','その他','役職','提案状況','決裁者アポ日','結論日','チャネル','失注カテゴリ','競合他社名','再検討時期','商談懸念事項','失注理由（要件）','失注理由詳細','備考']
   const rows = proposals.map(p => [
     p.initialDate, p.companyName, p.salesRep, p.contactName, p.industry, p.employeeScale,
     p.priorityFlag ? '○' : '', p.other, p.position, p.status,
-    p.decisionMakerDate, p.conclusionDate, p.relationship, p.lossReason, p.lossReasonDetail, p.notes,
+    p.decisionMakerDate, p.conclusionDate, p.relationship,
+    p.lossCategory, p.competitorName, p.reconsiderationTiming, p.lossNotes,
+    p.lossReason, p.lossReasonDetail, p.notes,
   ].map(v => `"${(v ?? '').toString().replace(/"/g, '""')}"`).join(','))
 
   const bom = '\uFEFF'
@@ -27,9 +26,7 @@ function exportCsv(proposals) {
   URL.revokeObjectURL(url)
 }
 
-export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, users = [], onDeleteProposals }) {
-  const { showToast } = useToast()
-  const confirm = useConfirm()
+export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, pendingEditProposalId, onPendingConsumed, users = [], onDeleteProposals }) {
   const [showPanel, setShowPanel] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -50,6 +47,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     employeeScale: [],
     lossReason: [],
     decisionMaker: '',
+    service: [],
   })
 
   // ダッシュボードからのフィルタ適用（ダッシュボードの絞り込み状態を引き継ぐ）
@@ -79,6 +77,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         employeeScale: clickEmployeeScale.length ? clickEmployeeScale : [],
         lossReason: initialFilter.lossReason ? [initialFilter.lossReason] : [],
         salesRep: clickSalesRep.length ? clickSalesRep : (df.salesRep || []),
+        service: [],
         priority: '',
         month: initialFilter.month ? [initialFilter.month] : [],
         decisionMaker: initialFilter.decisionMaker || df.decisionMaker || '',
@@ -90,6 +89,16 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       onFilterConsumed?.()
     }
   }, [initialFilter])
+
+  useEffect(() => {
+    if (!pendingEditProposalId) return
+    const proposal = proposals.find(p => p.id === pendingEditProposalId)
+    if (proposal) {
+      setEditItem(proposal)
+      setShowPanel(true)
+      onPendingConsumed?.()
+    }
+  }, [pendingEditProposalId, proposals])
 
   const months = useMemo(() => {
     const set = new Set()
@@ -121,6 +130,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       if (filters.lossReason.length && !filters.lossReason.includes(p.lossReason)) return false
       if (filters.decisionMaker === 'yes' && !p.decisionMakerDate) return false
       if (filters.decisionMaker === 'no' && p.decisionMakerDate) return false
+      if (filters.service.length && !filters.service.includes(p.service)) return false
       if (dateFrom && (!p.initialDate || p.initialDate < dateFrom)) return false
       if (dateTo && (!p.initialDate || p.initialDate > dateTo)) return false
       if (q) {
@@ -133,11 +143,9 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
   }, [proposals, filters, searchText, dateFrom, dateTo])
 
   const handleSave = (item) => {
-    let wasUpdate = false
     setProposals(prev => {
       const idx = prev.findIndex(p => p.id === item.id)
       if (idx >= 0) {
-        wasUpdate = true
         const oldItem = prev[idx]
         const log = [...(item.activityLog || [])]
         if (oldItem.status !== item.status) {
@@ -163,7 +171,6 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     })
     setShowPanel(false)
     setEditItem(null)
-    showToast(wasUpdate ? '提案を更新しました' : '提案を追加しました', 'success')
   }
 
   const handleStatusChange = (id, newStatus) => {
@@ -183,21 +190,10 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     })
   }
 
-  const handleDelete = async (id) => {
-    const target = proposals.find(p => p.id === id)
-    const ok = await confirm({
-      title: '提案を削除',
-      message: target?.companyName
-        ? `「${target.companyName}」の提案を削除します。よろしいですか？`
-        : 'この提案を削除します。よろしいですか？',
-      confirmText: '削除',
-      cancelText: 'キャンセル',
-      variant: 'danger',
-    })
-    if (!ok) return
-    if (target) onDeleteProposals?.([target])
-    setProposals(prev => prev.filter(p => p.id !== id))
-    showToast('提案を削除しました', 'success')
+  const handleDelete = (id) => {
+    if (confirm('この提案を削除しますか？')) {
+      setProposals(prev => prev.filter(p => p.id !== id))
+    }
   }
 
   const handleCardClick = (item) => {
@@ -234,22 +230,13 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     setBulkValue('')
   }
 
-  const deleteSelected = async () => {
+  const deleteSelected = () => {
     if (selectedIds.size === 0) return
-    const count = selectedIds.size
-    const ok = await confirm({
-      title: `選択した${count}件を削除`,
-      message: 'この操作は取り消せません。よろしいですか？',
-      confirmText: '削除',
-      cancelText: 'キャンセル',
-      variant: 'danger',
-    })
-    if (!ok) return
+    if (!confirm(`選択した${selectedIds.size}件を削除しますか？この操作は取り消せません。`)) return
     const toDelete = proposals.filter(p => selectedIds.has(p.id))
     onDeleteProposals?.(toDelete)
     setProposals(prev => prev.filter(p => !selectedIds.has(p.id)))
     setSelectedIds(new Set())
-    showToast(`${count}件を削除しました`, 'success')
   }
 
   const BULK_FIELDS = [
@@ -263,10 +250,8 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
   const handleCsvImport = (data, mode) => {
     if (mode === 'replace') {
       setProposals(data)
-      showToast(`${data.length}件を取込みました（既存を置き換え）`, 'success')
     } else {
       setProposals(prev => [...prev, ...data])
-      showToast(`${data.length}件を追加取込しました`, 'success')
     }
   }
 
@@ -275,7 +260,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 className="text-xl font-bold text-slate-800">提案リスト</h2>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           {/* View Toggle */}
           <div className="flex bg-slate-100 rounded-lg p-0.5">
             <button
@@ -306,10 +291,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           </button>
           {proposals.length > 0 && (
             <button
-              onClick={() => {
-                exportCsv(filtered)
-                showToast(`CSVをエクスポートしました（${filtered.length}件）`, 'success')
-              }}
+              onClick={() => exportCsv(filtered)}
               className="px-4 py-2 bg-slate-600 text-white text-sm rounded-md hover:bg-slate-700 transition-colors"
             >
               CSVエクスポート{filtered.length < proposals.length ? `（${filtered.length}件）` : ''}
@@ -342,6 +324,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         <MultiSelect selected={filters.relationship} onChange={v => setFilter('relationship', v)} options={RELATIONSHIPS} placeholder="全チャネル" />
         <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="全営業" />
         <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="全規模" />
+        <MultiSelect selected={filters.service} onChange={v => setFilter('service', v)} options={PROPOSAL_SERVICES} placeholder="全サービス" />
         <select value={filters.priority} onChange={e => setFilter('priority', e.target.value)}
           className="border border-slate-300 rounded-md px-2 py-1.5 text-sm bg-white">
           <option value="">優先フラグ</option>
@@ -349,12 +332,12 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           <option value="false">なし</option>
         </select>
         <MultiSelect selected={filters.month} onChange={v => setFilter('month', v)} options={months} placeholder="全月" />
-        <div className="flex items-center gap-1 w-full sm:w-auto">
+        <div className="flex items-center gap-1">
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className={`border rounded-md px-2 py-1.5 text-sm flex-1 min-w-0 sm:flex-none sm:w-[130px] ${dateFrom ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-white'}`} />
-          <span className="text-slate-400 text-xs shrink-0">〜</span>
+            className={`border rounded-md px-2 py-1.5 text-sm w-[130px] ${dateFrom ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-white'}`} />
+          <span className="text-slate-400 text-xs">〜</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className={`border rounded-md px-2 py-1.5 text-sm flex-1 min-w-0 sm:flex-none sm:w-[130px] ${dateTo ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-white'}`} />
+            className={`border rounded-md px-2 py-1.5 text-sm w-[130px] ${dateTo ? 'border-blue-400 bg-blue-50' : 'border-slate-300 bg-white'}`} />
         </div>
         <label className="inline-flex items-center gap-1.5 cursor-pointer">
           <input type="checkbox" checked={filters.decisionMaker === 'yes'}
@@ -363,7 +346,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           <span className={`text-sm ${filters.decisionMaker === 'yes' ? 'text-blue-700 font-medium' : 'text-slate-600'}`}>決裁者アポあり</span>
         </label>
         {(Object.values(filters).some(v => Array.isArray(v) ? v.length > 0 : Boolean(v)) || dateFrom || dateTo) && (
-          <button onClick={() => { setFilters({ industry: [], status: [], relationship: [], priority: '', month: [], salesRep: [], employeeScale: [], lossReason: [], decisionMaker: '' }); setDateFrom(''); setDateTo('') }}
+          <button onClick={() => { setFilters({ industry: [], status: [], relationship: [], priority: '', month: [], salesRep: [], employeeScale: [], lossReason: [], decisionMaker: '', service: [] }); setDateFrom(''); setDateTo('') }}
             className="text-sm text-[#4a82ae] hover:text-[#2d6a9e] px-2">
             クリア
           </button>
@@ -419,59 +402,12 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       )}
 
       {/* View */}
-      {proposals.length === 0 ? (
-        <div className="bg-white rounded-lg shadow">
-          <EmptyState
-            variant="inbox"
-            title="まだ提案がありません"
-            message={"新規追加ボタン、またはCSVインポート・\nスプレッドシート同期で提案を取り込めます"}
-            action={
-              <div className="flex flex-wrap gap-2 justify-center">
-                <button
-                  onClick={() => setShowImport(true)}
-                  className="px-4 py-2 bg-[#0f766e] text-white text-sm rounded-md hover:bg-[#0a5c56] transition-colors"
-                >
-                  CSVインポート
-                </button>
-                <button
-                  onClick={() => { setEditItem(null); setShowPanel(true) }}
-                  className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors"
-                >
-                  + 新規追加
-                </button>
-              </div>
-            }
-          />
-        </div>
-      ) : viewMode === 'kanban' ? (
-        <>
-          <KanbanBoard
-            proposals={filtered}
-            onStatusChange={handleStatusChange}
-            onCardClick={handleCardClick}
-          />
-          {filtered.length === 0 && (
-            <div className="bg-white rounded-lg shadow mt-3">
-              <EmptyState
-                compact
-                variant="filter"
-                title="条件に一致する提案がありません"
-                message="フィルターや検索条件を変更してみてください"
-                action={
-                  <button
-                    onClick={() => {
-                      setFilters({ industry: [], status: [], relationship: [], priority: '', month: [], salesRep: [], employeeScale: [], lossReason: [], decisionMaker: '' })
-                      setDateFrom(''); setDateTo(''); setSearchText('')
-                    }}
-                    className="px-4 py-2 bg-slate-100 text-slate-700 text-sm rounded-md hover:bg-slate-200 transition-colors"
-                  >
-                    条件をクリア
-                  </button>
-                }
-              />
-            </div>
-          )}
-        </>
+      {viewMode === 'kanban' ? (
+        <KanbanBoard
+          proposals={filtered}
+          onStatusChange={handleStatusChange}
+          onCardClick={handleCardClick}
+        />
       ) : (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="overflow-x-auto">
@@ -486,6 +422,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">提案日</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">更新日</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">企業名</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">サービス</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">業種</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">営業</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">担当者</th>
@@ -493,30 +430,15 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">状況</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">チャネル</th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">決裁者アポ</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-slate-500 uppercase whitespace-nowrap">結論日</th>
                   <th className="px-3 py-2 text-center text-xs font-medium text-slate-500 uppercase whitespace-nowrap">操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="px-3 py-2">
-                      <EmptyState
-                        compact
-                        variant="filter"
-                        title="条件に一致する提案がありません"
-                        message="フィルターや検索条件を変更してみてください"
-                        action={
-                          <button
-                            onClick={() => {
-                              setFilters({ industry: [], status: [], relationship: [], priority: '', month: [], salesRep: [], employeeScale: [], lossReason: [], decisionMaker: '' })
-                              setDateFrom(''); setDateTo(''); setSearchText('')
-                            }}
-                            className="px-4 py-2 bg-slate-100 text-slate-700 text-sm rounded-md hover:bg-slate-200 transition-colors"
-                          >
-                            条件をクリア
-                          </button>
-                        }
-                      />
+                    <td colSpan={14} className="px-3 py-8 text-center text-slate-400">
+                      データがありません
                     </td>
                   </tr>
                 ) : filtered.map(p => (
@@ -534,6 +456,13 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                       {p.priorityFlag && <span className="text-yellow-500 mr-1">&#9733;</span>}
                       {p.companyName}
                     </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {p.service ? (
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[#e8f0f8] text-[#2d6a9e]">
+                          {p.service}
+                        </span>
+                      ) : <span className="text-slate-300 text-xs">-</span>}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-500 text-xs">{p.industry || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.salesRep}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.contactName}</td>
@@ -545,6 +474,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.relationship}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.decisionMakerDate}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.conclusionDate || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-center">
                       <button
                         onClick={e => { e.stopPropagation(); handleDelete(p.id) }}
@@ -566,6 +496,13 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           proposal={editItem}
           onSave={handleSave}
           onClose={() => { setShowPanel(false); setEditItem(null) }}
+          onDelete={(id) => {
+            const toDelete = proposals.filter(p => p.id === id)
+            onDeleteProposals?.(toDelete)
+            setProposals(prev => prev.filter(p => p.id !== id))
+            setShowPanel(false)
+            setEditItem(null)
+          }}
           apiKey={apiKey}
           salesReps={salesReps}
         />

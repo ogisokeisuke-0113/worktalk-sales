@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys, loadDownloadLeads, saveDownloadLeads } from './storage'
 import { db } from './lib/db'
-import { isSupabaseEnabled } from './lib/supabase'
+import { supabase, isSupabaseEnabled } from './lib/supabase'
+import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
+import SaveIndicator from './components/SaveIndicator'
 import { EMPLOYEE_SCALES } from './constants'
 import Dashboard from './components/Dashboard'
 import ProposalList from './components/ProposalList'
@@ -9,7 +11,6 @@ import SalesRepView from './components/SalesRepView'
 import TeleapoList from './components/TeleapoList'
 import Settings from './components/Settings'
 import LoginScreen from './components/LoginScreen'
-import { useToast } from './components/Toast'
 
 const TABS = [
   { id: 'dashboard', label: 'ダッシュボード' },
@@ -19,6 +20,14 @@ const TABS = [
 ]
 
 // ========== スプレッドシート同期 ==========
+const SALES_REP_MAP = {
+  '美藤': '美藤 陸',
+  '小木曽': '小木曽 圭祐',
+  '石本': '石本 善大',
+  '梶田': '梶田 祐守',
+  '兼平': '兼平 竜也',
+}
+
 const SHEET_COL_MAP = {
   '初回提案日時': 'initialDate',
   '初回アポ日': 'initialDate',
@@ -113,6 +122,9 @@ function mapSheetRow(row) {
       p[engKey] = formatSheetDate(val)
     } else if (engKey === 'employeeScale') {
       p[engKey] = normalizeScale(val)
+    } else if (engKey === 'salesRep') {
+      const name = String(val).trim()
+      p[engKey] = SALES_REP_MAP[name] || name
     } else {
       p[engKey] = String(val).trim()
     }
@@ -208,58 +220,13 @@ function migrateKessaisha(proposals) {
   return changed ? migrated : proposals
 }
 
-// ========== email_events → teleapoItems.emailStatus 集約 (Wave 3) ==========
-// 優先順位: クリック済み > 開封済み > 送信済み > 未送信
-// SendGrid Event Webhook (⑧) が Supabase.email_events に記録した履歴を
-// 起動時に取り込み、各 teleapo_item のバッジ表示に反映する
-const EMAIL_EVENT_TO_STATUS = {
-  click: 'クリック済み',
-  open: '開封済み',
-  delivered: '送信済み',
-  processed: '送信済み',
-  bounce: '送信済み',        // 送信 attempted の証跡
-  dropped: '送信済み',
-  // unsubscribe / spamreport は emailStatus を積極的に変えない (別途表示要件があれば対応)
-}
-const EMAIL_STATUS_RANK = { 'クリック済み': 3, '開封済み': 2, '送信済み': 1, '未送信': 0 }
-
-function mergeEmailEvents(items, events) {
-  if (!Array.isArray(events) || events.length === 0) return items
-  const bestByItem = new Map() // teleapo_item_id -> { status, occurred }
-  for (const ev of events) {
-    if (!ev.teleapo_item_id) continue
-    const status = EMAIL_EVENT_TO_STATUS[ev.event_type]
-    if (!status) continue
-    const cur = bestByItem.get(ev.teleapo_item_id)
-    const rank = EMAIL_STATUS_RANK[status] || 0
-    if (!cur || rank > (EMAIL_STATUS_RANK[cur.status] || 0)) {
-      bestByItem.set(ev.teleapo_item_id, { status, occurred: ev.occurred_at })
-    }
-  }
-  if (bestByItem.size === 0) return items
-  return items.map(item => {
-    const best = bestByItem.get(item.id)
-    if (!best) return item
-    const currentRank = EMAIL_STATUS_RANK[item.emailStatus] || 0
-    const bestRank = EMAIL_STATUS_RANK[best.status] || 0
-    if (bestRank <= currentRank) return item
-    const patch = { emailStatus: best.status }
-    if (best.status === '開封済み' || best.status === 'クリック済み') {
-      patch.emailOpenedAt = best.occurred
-    } else if (best.status === '送信済み' && !item.emailSentAt) {
-      patch.emailSentAt = best.occurred
-    }
-    return { ...item, ...patch }
-  })
-}
-
 export default function App() {
-  const { showToast } = useToast()
   const [users, setUsers] = useState(() => loadUsers())
   const [currentUser, setCurrentUser] = useState(() => loadCurrentUser())
   const [activeTab, setActiveTab] = useState('dashboard')
   const [proposalFilter, setProposalFilter] = useState(null)
   const [teleapoFilter, setTeleapoFilter] = useState(null)
+  const [pendingEditProposalId, setPendingEditProposalId] = useState(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [syncStatus, setSyncStatus] = useState(null) // null | { status:'loading'|'ok'|'error', time, count, message }
   const [deletedKeys, setDeletedKeys] = useState(() => loadDeletedKeys())
@@ -267,6 +234,17 @@ export default function App() {
   const hasSupabaseSyncedRef = useRef(false)
   const prevProposalsRef = useRef(null)
   const prevTeleapoRef = useRef(null)
+
+  // 送信キュー。比較基準は送信に成功したときにだけ進む（src/lib/saveQueue.js）
+  const queuesRef = useRef(null)
+  if (!queuesRef.current) {
+    const url = import.meta.env.VITE_SUPABASE_URL
+    const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+    queuesRef.current = {
+      teleapo: createSaveQueue({ name: 'teleapo', api: db.teleapoItems, table: 'teleapo_items', url, key }),
+      proposals: createSaveQueue({ name: 'proposals', api: db.proposals, table: 'proposals', url, key }),
+    }
+  }
   const prevUsersRef = useRef(null)
   const prevDownloadLeadsRef = useRef(null)
   const userMenuRef = useRef(null)
@@ -311,31 +289,32 @@ export default function App() {
 
     async function doStartupSync() {
       try {
-        const [remoteProposals, remoteTeleapo, remoteUsers, remoteDownloads, remoteSettings, remoteEmailEvents] =
+        const [remoteProposals, remoteTeleapo, remoteUsers, remoteDownloads, remoteSettings] =
           await Promise.all([
             db.proposals.fetchAll(),
             db.teleapoItems.fetchAll(),
             db.users.fetchAll(),
             db.downloadLeads.fetchAll(),
             db.settings.get(),
-            db.emailEvents.fetchAll(),
           ])
 
         function mergeById(local, remote) {
           if (!remote) return local
-          const remoteMap = new Map(remote.map(r => [r.id, r]))
-          const merged = local.map(item => remoteMap.has(item.id) ? remoteMap.get(item.id) : item)
-          const localIds = new Set(local.map(i => i.id))
-          remote.forEach(r => { if (!localIds.has(r.id)) merged.push(r) })
-          return merged
+          // Supabaseを正とする：remote に存在しないローカルレコードは削除済みとして除外
+          return remote
         }
 
-        if (remoteProposals) setProposals(prev => mergeById(prev, remoteProposals))
-        if (remoteTeleapo || remoteEmailEvents) {
-          setTeleapoItems(prev => {
-            const merged = remoteTeleapo ? mergeById(prev, remoteTeleapo) : prev
-            return remoteEmailEvents ? mergeEmailEvents(merged, remoteEmailEvents) : merged
-          })
+        // 比較基準も同時に更新して差分をゼロにする。
+        // これをやらないと、Supabase(jsonb)が返すキー順とアプリが作るキー順が違うため
+        // JSON.stringify 比較で全件が「変更あり」と誤判定され、
+        // 起動のたびに全9,647行が丸ごと上書きされる。
+        if (remoteProposals) {
+          prevProposalsRef.current = remoteProposals
+          setProposals(remoteProposals)
+        }
+        if (remoteTeleapo) {
+          prevTeleapoRef.current = remoteTeleapo
+          setTeleapoItems(remoteTeleapo)
         }
         if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers)
         if (remoteDownloads && remoteDownloads.length > 0) setDownloadLeads(remoteDownloads)
@@ -343,24 +322,25 @@ export default function App() {
       } catch (e) {
         console.warn('[Supabase] 起動時同期エラー:', e.message)
       }
+
+      // 他メンバーの更新をその場で反映する。
+      // publication が未設定でもここは失敗しない（イベントが届かないだけ）。
+      subscribeChanges(supabase, 'teleapo_items', queuesRef.current.teleapo, setTeleapoItems)
+      subscribeChanges(supabase, 'proposals', queuesRef.current.proposals, setProposals)
     }
 
     doStartupSync()
   }, [currentUser])
 
-  // ── Supabase へのデータ書き込み（変更検知 + 削除追跡） ──────────
+  // ── Supabase へのデータ書き込み（送信キュー経由） ──────────
+  // 直接 setTimeout で送っていた頃は、1.5秒以内に次の操作が入ると
+  // タイマーがキャンセルされ、先の変更が差分から消えて二度と送られなかった。
   useEffect(() => {
     if (!isSupabaseEnabled) return
     const prev = prevProposalsRef.current
     prevProposalsRef.current = proposals
     if (!prev) return  // 初回マウント時は書き込みしない
-    const timer = setTimeout(async () => {
-      if (proposals.length > 0) await db.proposals.upsert(proposals)
-      const currentIds = new Set(proposals.map(p => p.id))
-      const deletedIds = (prev || []).filter(p => !currentIds.has(p.id)).map(p => p.id)
-      if (deletedIds.length) await db.proposals.delete(deletedIds)
-    }, 1500)
-    return () => clearTimeout(timer)
+    queuesRef.current.proposals.enqueue(prev, proposals)
   }, [proposals])
 
   useEffect(() => {
@@ -368,13 +348,7 @@ export default function App() {
     const prev = prevTeleapoRef.current
     prevTeleapoRef.current = teleapoItems
     if (!prev) return
-    const timer = setTimeout(async () => {
-      if (teleapoItems.length > 0) await db.teleapoItems.upsert(teleapoItems)
-      const currentIds = new Set(teleapoItems.map(i => i.id))
-      const deletedIds = (prev || []).filter(i => !currentIds.has(i.id)).map(i => i.id)
-      if (deletedIds.length) await db.teleapoItems.delete(deletedIds)
-    }, 1500)
-    return () => clearTimeout(timer)
+    queuesRef.current.teleapo.enqueue(prev, teleapoItems)
   }, [teleapoItems])
 
   useEffect(() => {
@@ -433,7 +407,7 @@ export default function App() {
       // 「未提案」「アポ獲得不可」はシステムに取り込まない
       const SKIP_STATUSES = ['未提案', 'アポ獲得不可']
       const mapped = rows.map(mapSheetRow).filter(r =>
-        r.companyName && !SKIP_STATUSES.includes(r.status)
+        r.companyName && r.salesRep && !SKIP_STATUSES.includes(r.status)
       )
       const incomingNames = new Set(mapped.map(r => r.companyName))
       const validStatuses = ['アポ確定','担当者合意','決裁者アポ調整中','決裁者合意','受注','失注']
@@ -456,7 +430,6 @@ export default function App() {
         return after
       })
       setSyncStatus({ status: 'ok', time: new Date(), count: mapped.length })
-      showToast(`スプレッドシートを同期しました（${mapped.length}件）`, 'success')
 
       // ダウンロード履歴も取得（GASが対応していれば）
       try {
@@ -471,9 +444,8 @@ export default function App() {
       } catch (_) { /* ダウンロード履歴未対応のGASは無視 */ }
     } catch (e) {
       setSyncStatus({ status: 'error', message: e.message, time: new Date() })
-      showToast(`同期エラー: ${e.message}`, 'error', 5000)
     }
-  }, [showToast])
+  }, [])
 
   // ログイン後に一度だけ自動同期
   useEffect(() => {
@@ -508,8 +480,9 @@ export default function App() {
   }
 
   const promoteToProposal = (teleapoItem) => {
+    const newId = crypto.randomUUID()
     const newProposal = {
-      id: crypto.randomUUID(),
+      id: newId,
       initialDate: new Date().toISOString().slice(0, 10),
       companyName: teleapoItem.companyName,
       salesRep: currentUser?.name || '',
@@ -538,6 +511,8 @@ export default function App() {
         ? { ...i, status: 'アポ確定', isKept: false, keptBy: '', keptAt: '' }
         : i
     ))
+    switchTab('proposals')
+    setPendingEditProposalId(newId)
   }
 
   // Show login screen if not logged in
@@ -553,6 +528,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <SaveIndicator />
       <header className="bg-[#2d6a9e] shadow-md">
         <div className="px-4">
           <div className="flex items-center h-14">
@@ -655,6 +631,8 @@ export default function App() {
               apiKey={settings.apiKey}
               initialFilter={proposalFilter}
               onFilterConsumed={() => setProposalFilter(null)}
+              pendingEditProposalId={pendingEditProposalId}
+              onPendingConsumed={() => setPendingEditProposalId(null)}
               users={users}
               onDeleteProposals={(deleted) => {
                 setDeletedKeys(prev => {
@@ -671,7 +649,7 @@ export default function App() {
         )}
         {mountedTabs.has('reps') && (
           <div className={activeTab !== 'reps' ? 'hidden' : ''}>
-            <SalesRepView proposals={proposals} users={users} />
+            <SalesRepView proposals={proposals} users={users} teleapoItems={teleapoItems} />
           </div>
         )}
         {mountedTabs.has('teleapo') && (
@@ -700,6 +678,7 @@ export default function App() {
               currentUser={currentUser}
               syncStatus={syncStatus}
               onSync={() => syncFromSheet(settings.sheetSyncUrl)}
+              onImportTeleapo={(items) => setTeleapoItems(items)}
             />
           </div>
         )}

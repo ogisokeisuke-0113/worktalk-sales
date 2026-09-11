@@ -4,7 +4,8 @@ export default function LoginScreen({ users, onLogin, onRegister }) {
   const [mode, setMode] = useState(users.length === 0 ? 'register' : 'login')
   const [selectedUser, setSelectedUser] = useState('')
   const [password, setPassword] = useState('')
-  const [newName, setNewName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [firstName, setFirstName] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [error, setError] = useState('')
 
@@ -34,18 +35,20 @@ export default function LoginScreen({ users, onLogin, onRegister }) {
   const handleRegister = (e) => {
     e.preventDefault()
     setError('')
-    const trimmed = newName.trim()
-    if (!trimmed) {
-      setError('名前を入力してください')
+    const last = lastName.trim()
+    const first = firstName.trim()
+    if (!last || !first) {
+      setError('苗字と名前の両方を入力してください')
       return
     }
-    if (users.some(u => u.name === trimmed)) {
+    const fullName = `${last} ${first}`
+    if (users.some(u => u.name === fullName)) {
       setError('この名前は既に使用されています')
       return
     }
     const user = {
       id: crypto.randomUUID(),
-      name: trimmed,
+      name: fullName,
       password: newPassword || '',
       createdAt: new Date().toISOString(),
     }
@@ -132,15 +135,24 @@ export default function LoginScreen({ users, onLogin, onRegister }) {
               )}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                  名前（担当者名）
+                  氏名
                 </label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={e => setNewName(e.target.value)}
-                  placeholder="例：田中太郎"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={e => setLastName(e.target.value)}
+                    placeholder="苗字"
+                    className="w-1/2 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
+                  />
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={e => setFirstName(e.target.value)}
+                    placeholder="名前"
+                    className="w-1/2 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2d6a9e] focus:border-transparent"
+                  />
+                </div>
               </div>
               <div className="mb-5">
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">

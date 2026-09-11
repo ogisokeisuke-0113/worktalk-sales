@@ -122,6 +122,12 @@ export default function KanbanBoard({ proposals, onStatusChange, onCardClick }) 
                       <span className="text-[10px] text-slate-400">{p.initialDate.slice(5)}</span>
                     )}
                   </div>
+                  {p.conclusionDate && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="text-[9px] text-slate-400">結論</span>
+                      <span className="text-[10px] font-medium text-slate-600">{p.conclusionDate.slice(5)}</span>
+                    </div>
+                  )}
                   {p.relationship && p.relationship !== '新規' && (
                     <span className="inline-block mt-1 text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">
                       {p.relationship}
