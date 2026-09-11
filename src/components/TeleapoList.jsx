@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS } from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
@@ -15,6 +15,26 @@ function isKeepActive(item) {
   return kept.getFullYear() === now.getFullYear() &&
          kept.getMonth() === now.getMonth() &&
          kept.getDate() === now.getDate()
+}
+
+function BookmarkButton({ marked, others = [], onClick, size = 'sm' }) {
+  const label = marked ? 'ブックマークを外す' : 'ブックマークに追加'
+  const names = others.map(b => b.user_name).filter(Boolean)
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onClick() }}
+      title={names.length ? `${label}（${names.join('・')}も登録）` : label}
+      aria-label={label}
+      className={`flex-shrink-0 rounded-md transition-colors ${size === 'lg' ? 'text-xl px-1.5 py-0.5' : 'text-base px-1 py-0.5'} ${
+        marked ? 'text-amber-500 hover:text-amber-600' : 'text-slate-300 hover:text-amber-400'
+      }`}
+    >
+      {marked ? '★' : '☆'}
+      {names.length > 0 && !marked && (
+        <span className="ml-0.5 align-middle text-[10px] font-medium text-amber-600">{names.length}</span>
+      )}
+    </button>
+  )
 }
 
 function calcPriorityScore(item, downloadLeads = []) {
@@ -546,7 +566,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
 }
 
 /* ───────────────────── 検索画面 ───────────────────── */
-function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, allListSources = [], allPrefectures = [], onAddNew, onCsvImport }) {
+function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkCount = 0 }) {
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
   const activeCount = [
@@ -556,6 +576,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
     filters.callCount,
     filters.employeeScale.length > 0,
     filters.kept,
+    (filters.bookmarkedBy || []).length > 0,
     filters.callDateFrom,
     filters.callDateTo,
     filters.emailStatus,
@@ -676,6 +697,44 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
         </div>
 
         {/* Keep */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">ブックマーク</p>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={(filters.bookmarkedBy || []).includes('__me__')}
+                onChange={e => setFilter('bookmarkedBy',
+                  e.target.checked ? [...(filters.bookmarkedBy || []), '__me__']
+                                   : (filters.bookmarkedBy || []).filter(v => v !== '__me__'))}
+                className="w-4 h-4 rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf]"
+              />
+              <span className="text-amber-500">★</span>
+              自分のブックマーク
+              <span className="text-xs text-slate-400">({myBookmarkCount})</span>
+            </label>
+            {bookmarkOwners.map(o => (
+              <label key={o.name} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={(filters.bookmarkedBy || []).includes(o.name)}
+                  onChange={e => setFilter('bookmarkedBy',
+                    e.target.checked ? [...(filters.bookmarkedBy || []), o.name]
+                                     : (filters.bookmarkedBy || []).filter(v => v !== o.name))}
+                  className="w-4 h-4 rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf]"
+                />
+                {o.name}のブックマーク
+                <span className="text-xs text-slate-400">({o.count})</span>
+              </label>
+            ))}
+            {bookmarkOwners.length === 0 && myBookmarkCount === 0 && (
+              <p className="text-xs text-slate-400 py-1.5">
+                まだありません。企業の ☆ を押すとここに集まります。
+              </p>
+            )}
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Keep</p>
           <div className="grid grid-cols-2 gap-3">
@@ -898,7 +957,26 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 }
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
-function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, settings = {}, allListSources = [], onAddNew }) {
+function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, settings = {}, allListSources = [], onAddNew,
+  bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), onToggleBookmark }) {
+  // 一度に描画する件数。9,647件を全部描くと DOM が28万ノードになり、
+  // 表示に6秒かかってスクロールも重くなる。必要な分だけ描いて継ぎ足す。
+  const PAGE_SIZE = 50
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  // 条件が変わったら先頭から出し直す
+  useEffect(() => { setVisibleCount(PAGE_SIZE) }, [filters, searchText])
+
+  // 一番下まで来たら自動で continue（ボタンを押さなくても続く）
+  const moreRef = useRef(null)
+  useEffect(() => {
+    const el = moreRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(es => {
+      if (es.some(e => e.isIntersecting)) setVisibleCount(c => c + PAGE_SIZE * 4)
+    }, { rootMargin: '400px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [visibleCount, filtered])
   const [callRecordTarget, setCallRecordTarget] = useState(null)
   const [showFilterPanel, setShowFilterPanel] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
@@ -1009,6 +1087,9 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
     filters.salesRep.length > 0,
     filters.callCount,
     filters.employeeScale.length > 0,
+    filters.bookmarkedBy,
+    bookmarksByItem,
+    currentUser?.authId,
     filters.kept,
     filters.callDateFrom,
     filters.callDateTo,
@@ -1029,6 +1110,9 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
     const label = filters.callCount === '0' ? '未架電' : filters.callCount === '1-3' ? '1〜3回' : '4回以上'
     filterBadges.push({ label, onRemove: () => setFilter('callCount', '') })
   }
+  if ((filters.bookmarkedBy || []).length) filterBadges.push({
+    label: 'ブックマーク: ' + filters.bookmarkedBy.map(w => w === '__me__' ? '自分' : w).join(', '),
+    onRemove: () => setFilter('bookmarkedBy', []) })
   if (filters.kept === 'true') filterBadges.push({ label: 'Keep中', onRemove: () => setFilter('kept', '') })
   if (filters.kept === 'false') filterBadges.push({ label: 'Keep以外', onRemove: () => setFilter('kept', '') })
   if (filters.keepHasHistory === 'true') filterBadges.push({ label: 'Keep履歴あり', onRemove: () => setFilter('keepHasHistory', '') })
@@ -1299,7 +1383,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
               </button>
             )}
           </div>
-        ) : sortedFiltered.map(item => {
+        ) : sortedFiltered.slice(0, visibleCount).map(item => {
           const history = item.callHistory || []
           const lastCall = history.length > 0 ? history[history.length - 1] : null
           const priority = calcPriorityScore(item, downloadLeads)
@@ -1336,6 +1420,11 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 </span>
                 {/* 社名がGoogle検索リンクになったため、詳細パネルの入口を明示する。
                     カード下半分は元から伝播を止めており、押せるのはこの行だけ。 */}
+                <BookmarkButton
+                  marked={myBookmarkIds.has(item.id)}
+                  others={(bookmarksByItem.get(item.id) || []).filter(b => b.user_id !== currentUser?.authId)}
+                  onClick={() => onToggleBookmark && onToggleBookmark(item)}
+                />
                 <button
                   onClick={e => { e.stopPropagation(); onSelectItem(item) }}
                   title="この企業の詳細を開く"
@@ -1508,6 +1597,16 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
             </div>
           )
         })}
+        {sortedFiltered.length > visibleCount && (
+          <div ref={moreRef} className="py-6 text-center">
+            <button
+              onClick={() => setVisibleCount(c => c + PAGE_SIZE * 4)}
+              className="px-5 py-2.5 text-sm font-medium text-[#2d6a9e] bg-white border border-[#2d6a9e] rounded-lg hover:bg-[#2d6a9e]/5 transition-colors"
+            >
+              もっと表示（残り {sortedFiltered.length - visibleCount} 件）
+            </button>
+          </div>
+        )}
       </div>
 
       {callRecordTarget && (
@@ -1667,7 +1766,31 @@ function DownloadLeads({ leads = [], teleapoItems = [], proposedNames = new Set(
 }
 
 /* ───────────────────── メインコンポーネント ───────────────────── */
-export default function TeleapoList({ items, setItems, onPromote, proposals = [], currentUser, users = [], downloadLeads = [], settings = {}, initialFilter, onFilterConsumed }) {
+export default function TeleapoList({ items, setItems, onPromote, proposals = [], currentUser, users = [], downloadLeads = [], settings = {}, initialFilter, onFilterConsumed,
+  bookmarks = [], onToggleBookmark, onSaveBookmarkNote }) {
+  // 自分がブックマークしている企業のid
+  const myBookmarkIds = useMemo(
+    () => new Set(bookmarks.filter(b => b.user_id === currentUser?.authId).map(b => b.teleapo_item_id)),
+    [bookmarks, currentUser?.authId])
+  // 「梶田ブックマーク」「美藤ブックマーク」として並べるための一覧（自分以外）
+  const bookmarkOwners = useMemo(() => {
+    const m = new Map()
+    for (const b of bookmarks) {
+      if (b.user_id === currentUser?.authId) continue
+      m.set(b.user_name, (m.get(b.user_name) || 0) + 1)
+    }
+    return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
+  }, [bookmarks, currentUser?.authId])
+
+  // 企業id → ブックマークしている人たち（誰の分でも見えるようにするため）
+  const bookmarksByItem = useMemo(() => {
+    const m = new Map()
+    for (const b of bookmarks) {
+      if (!m.has(b.teleapo_item_id)) m.set(b.teleapo_item_id, [])
+      m.get(b.teleapo_item_id).push(b)
+    }
+    return m
+  }, [bookmarks])
   const [subTab, setSubTab] = useState('list') // 'list' | 'downloads'
   const [page, setPage] = useState('search') // 'search' | 'results'
   const [showModal, setShowModal] = useState(false)
@@ -1713,6 +1836,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     keepDateFrom: '',
     keepDateTo: '',
     keepBy: [],
+    bookmarkedBy: [],   // ブックマークした人で絞る（'__me__' は自分）
   })
 
   // ダッシュボードからのフィルタ適用
@@ -1779,6 +1903,14 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       if (filters.employeeScale.length && !filters.employeeScale.includes(item.employeeScale)) return false
       if (filters.kept === 'true' && !isKeepActive(item)) return false
       if (filters.kept === 'false' && isKeepActive(item)) return false
+      // ブックマーク：自分の分、または指定した人の分
+      if ((filters.bookmarkedBy || []).length) {
+        const bs = bookmarksByItem.get(item.id) || []
+        const ok = filters.bookmarkedBy.some(who =>
+          who === '__me__' ? bs.some(b => b.user_id === currentUser?.authId)
+                           : bs.some(b => b.user_name === who))
+        if (!ok) return false
+      }
       // Keep履歴フィルター
       const kh = item.keepHistory || []
       if (filters.keepHasHistory === 'true' && kh.length === 0 && !isKeepActive(item)) return false
@@ -2016,6 +2148,8 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       {/* テレアポリストタブ */}
       {subTab === 'list' && page === 'search' && (
         <SearchPage
+          bookmarkOwners={bookmarkOwners}
+          myBookmarkCount={myBookmarkIds.size}
           filters={filters}
           setFilters={setFilters}
           searchText={searchText}
@@ -2032,6 +2166,10 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
 
       {subTab === 'list' && page === 'results' && (
         <ResultsPage
+          bookmarks={bookmarks}
+          myBookmarkIds={myBookmarkIds}
+          bookmarksByItem={bookmarksByItem}
+          onToggleBookmark={onToggleBookmark}
           filtered={filtered}
           items={items}
           filters={filters}

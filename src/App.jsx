@@ -4,6 +4,7 @@ import { db } from './lib/db'
 import { supabase, isSupabaseEnabled } from './lib/supabase'
 import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
 import { cacheGet, cacheSet, dropLegacyCache } from './lib/cache'
+import { fetchBookmarks, addBookmark, removeBookmark, updateBookmarkNote, subscribeBookmarks } from './lib/bookmarks'
 import SaveIndicator from './components/SaveIndicator'
 import PasswordChangeModal from './components/PasswordChangeModal'
 import { EMPLOYEE_SCALES } from './constants'
@@ -229,6 +230,7 @@ export default function App() {
   // 初回のサーバー取得が終わったか。終わるまでは「データがありません」ではなく
   // 「読み込み中」を出す。9,647件あるので数秒かかる。
   const [initialSyncing, setInitialSyncing] = useState(true)
+  const [bookmarks, setBookmarks] = useState([])
   const serverHydratedRef = useRef(false)
   const [showPasswordModal, setShowPasswordModal] = useState(false)
 
@@ -266,6 +268,8 @@ export default function App() {
       const m = session.user.user_metadata || {}
       return {
         id: m.users_id || session.user.id,
+        // ブックマークは Auth の uid を正とする（RLS が auth.uid() で判定するため）
+        authId: session.user.id,
         name: m.name || session.user.email,
         email: session.user.email,
       }
@@ -386,6 +390,10 @@ export default function App() {
 
       // 他メンバーの更新をその場で反映する。
       // publication が未設定でもここは失敗しない（イベントが届かないだけ）。
+      // ブックマークは別テーブルなので、本体とは別に読み込む
+      fetchBookmarks().then(setBookmarks)
+      subscribeBookmarks(() => { fetchBookmarks().then(setBookmarks) })
+
       subscribeChanges(supabase, 'teleapo_items', queuesRef.current.teleapo, setTeleapoItems)
       subscribeChanges(supabase, 'proposals', queuesRef.current.proposals, setProposals)
     }
@@ -531,6 +539,32 @@ export default function App() {
     setShowUserMenu(false)
     try { await supabase.auth.signOut() } catch { /* すでに切れている場合は無視 */ }
     setCurrentUser(null)
+  }
+
+  const toggleBookmark = async (item, note = '') => {
+    if (!currentUser?.authId) return
+    const mine = bookmarks.find(b => b.teleapo_item_id === item.id && b.user_id === currentUser.authId)
+    // 通信を待たずに画面を先に更新する（架電中に待たされないように）
+    setBookmarks(prev => mine
+      ? prev.filter(b => b !== mine)
+      : [...prev, { id: 'tmp-' + item.id, teleapo_item_id: item.id, company_name: item.companyName,
+                    user_id: currentUser.authId, user_name: currentUser.name, note, created_at: new Date().toISOString() }])
+    try {
+      if (mine) await removeBookmark({ itemId: item.id, user: currentUser })
+      else await addBookmark({ item, user: currentUser, note })
+    } catch (e) {
+      window.alert(e.message)
+    } finally {
+      fetchBookmarks().then(setBookmarks)   // 正しい状態に揃え直す
+    }
+  }
+
+  const saveBookmarkNote = async (item, note) => {
+    if (!currentUser?.authId) return
+    setBookmarks(prev => prev.map(b =>
+      b.teleapo_item_id === item.id && b.user_id === currentUser.authId ? { ...b, note } : b))
+    try { await updateBookmarkNote({ itemId: item.id, user: currentUser, note }) }
+    catch (e) { window.alert(e.message) }
   }
 
   const handleChangePassword = () => {
@@ -725,6 +759,9 @@ export default function App() {
             <TeleapoList
               items={teleapoItems}
               setItems={setTeleapoItems}
+              bookmarks={bookmarks}
+              onToggleBookmark={toggleBookmark}
+              onSaveBookmarkNote={saveBookmarkNote}
               onPromote={promoteToProposal}
               proposals={proposals}
               currentUser={currentUser}
