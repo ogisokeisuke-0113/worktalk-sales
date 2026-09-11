@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import CompanyLink from './CompanyLink'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Cell, PieChart, Pie, Legend,
@@ -821,7 +822,7 @@ export default function SalesRepView({ proposals, users = [], teleapoItems = [] 
                       <td className="px-3 py-2 whitespace-nowrap text-slate-600">{p.initialDate}</td>
                       <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-800">
                         {p.priorityFlag && <span className="text-yellow-500 mr-1">★</span>}
-                        {p.companyName}
+                        <CompanyLink name={p.companyName} />
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-slate-500 text-xs">{p.industry || '-'}</td>
                       <td className="px-3 py-2 whitespace-nowrap">

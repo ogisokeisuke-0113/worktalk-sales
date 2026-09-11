@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS } from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
+import CompanyLink from './CompanyLink'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]'
 
@@ -360,7 +361,9 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
         <div className="sticky top-0 bg-white border-b px-5 py-4 z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-lg font-bold text-slate-800">{item.companyName}</h3>
+              <h3 className="text-lg font-bold text-slate-800">
+                <CompanyLink name={item.companyName} />
+              </h3>
               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                 {item.status}
               </span>
@@ -1328,7 +1331,18 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                     onClick={e => e.stopPropagation()}
                     className="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf] flex-shrink-0 cursor-pointer" />
                 )}
-                <span className="text-[15px] font-semibold text-slate-800 mr-1">{item.companyName}</span>
+                <span className="text-[15px] font-semibold text-slate-800">
+                  <CompanyLink name={item.companyName} />
+                </span>
+                {/* 社名がGoogle検索リンクになったため、詳細パネルの入口を明示する。
+                    カード下半分は元から伝播を止めており、押せるのはこの行だけ。 */}
+                <button
+                  onClick={e => { e.stopPropagation(); onSelectItem(item) }}
+                  title="この企業の詳細を開く"
+                  className="mr-1 px-2 py-0.5 rounded-md text-xs font-medium text-[#2d6a9e] bg-[#2d6a9e]/10 hover:bg-[#2d6a9e]/20 transition-colors flex-shrink-0"
+                >
+                  詳細
+                </button>
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                   {item.status}
                 </span>

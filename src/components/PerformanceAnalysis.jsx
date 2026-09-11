@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
+import CompanyLink from './CompanyLink'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
@@ -460,7 +461,7 @@ export default function PerformanceAnalysis({ proposals, performance, setPerform
                       {companyRanking.map((c, i) => (
                         <tr key={c.companyName} className="border-t border-slate-100 hover:bg-slate-50">
                           <td className="px-2 py-2 text-slate-400">{i + 1}</td>
-                          <td className="px-2 py-2 font-medium text-slate-800">{c.companyName}</td>
+                          <td className="px-2 py-2 font-medium text-slate-800"><CompanyLink name={c.companyName} /></td>
                           <td className="px-2 py-2 text-slate-600">{c.industry}</td>
                           <td className="px-2 py-2 text-slate-600">{c.scale}</td>
                           <td className="px-2 py-2 text-right text-slate-600">{formatNum(c.videoStarts)}</td>
@@ -489,7 +490,7 @@ export default function PerformanceAnalysis({ proposals, performance, setPerform
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {unlinkedCompanies.slice(0, 12).map(p => (
                   <div key={p.id} className="bg-white rounded px-3 py-2 text-xs">
-                    <p className="font-medium text-slate-800">{p.companyName}</p>
+                    <p className="font-medium text-slate-800"><CompanyLink name={p.companyName} /></p>
                     <p className="text-slate-500 mt-0.5">{p.industry || '業種未設定'} / {p.status} / {p.conclusionDate || p.decisionMakerDate || '日付未設定'}</p>
                   </div>
                 ))}
@@ -728,7 +729,7 @@ function LossAnalysis({ proposals }) {
                       .sort((a, b) => (b.conclusionDate || '').localeCompare(a.conclusionDate || ''))
                       .map(p => (
                         <tr key={p.id} className={`border-t border-slate-100 hover:bg-slate-50 ${p.status === '失注' ? 'bg-rose-50/30' : ''}`}>
-                          <td className="px-2 py-2 font-medium text-slate-800">{p.companyName}</td>
+                          <td className="px-2 py-2 font-medium text-slate-800"><CompanyLink name={p.companyName} /></td>
                           <td className="px-2 py-2 text-slate-600">{p.industry || '-'}</td>
                           <td className="px-2 py-2 text-slate-600">{p.employeeScale || '-'}</td>
                           <td className="px-2 py-2 text-slate-600">{p.relationship || '-'}</td>
@@ -800,7 +801,7 @@ function LossAnalysis({ proposals }) {
                       .sort((a, b) => (b.conclusionDate || '').localeCompare(a.conclusionDate || ''))
                       .map(p => (
                         <tr key={p.id} className="border-t border-slate-100 hover:bg-slate-50">
-                          <td className="px-2 py-2 font-medium text-slate-800">{p.companyName}</td>
+                          <td className="px-2 py-2 font-medium text-slate-800"><CompanyLink name={p.companyName} /></td>
                           <td className="px-2 py-2 text-slate-600">{p.industry || '-'}</td>
                           <td className="px-2 py-2 text-slate-600">{p.employeeScale || '-'}</td>
                           <td className="px-2 py-2 text-slate-600">{p.relationship || '-'}</td>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import CompanyLink from './CompanyLink'
 import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, STATUS_COLORS, PROPOSAL_SERVICES } from '../constants'
 import ProposalSidePanel from './ProposalModal'
 import CsvImportModal from './CsvImportModal'
@@ -454,7 +455,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
                     <td className="px-3 py-2 whitespace-nowrap text-slate-400 text-xs">{p.updatedAt || '-'}</td>
                     <td className="px-3 py-2 whitespace-nowrap font-medium text-slate-800">
                       {p.priorityFlag && <span className="text-yellow-500 mr-1">&#9733;</span>}
-                      {p.companyName}
+                      <CompanyLink name={p.companyName} />
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {p.service ? (
