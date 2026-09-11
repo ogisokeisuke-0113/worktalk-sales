@@ -37,6 +37,19 @@ function BookmarkButton({ marked, others = [], onClick, size = 'sm' }) {
   )
 }
 
+// URLは salesbrain からの取り込みで、http:// が無かったり
+// そもそもURLの体をなしていないことがある。
+// 入力は何でも通す方針なので、リンクにするときだけ補正する。
+// 補正しないと「example.co.jp」がアプリ内の相対パス扱いになり、リンクが壊れる。
+function toHref(url) {
+  const v = String(url || '').trim()
+  if (!v) return null
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) return v      // 既にスキーマ付き
+  if (/^(mailto:|tel:)/i.test(v)) return v
+  if (/^[^\s/]+\.[^\s/]{2,}/.test(v)) return 'https://' + v   // ドメインらしきもの
+  return null                                            // URLとして開けない
+}
+
 function calcPriorityScore(item, downloadLeads = []) {
   let score = 0
   // ダウンロードリード一致 → +3
@@ -229,11 +242,19 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-600 mb-1">メールアドレス</label>
-              <input type="email" value={form.email || ''} onChange={e => set('email', e.target.value)} className={INPUT} placeholder="info@example.com" />
+              <input type="text" value={form.email || ''} onChange={e => set('email', e.target.value)} className={INPUT} placeholder="info@example.com" />
+              {form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(form.email).trim()) && (
+                // 保存は止めない。取り込み元のデータが不正でも登録できることを優先する。
+                // ただしメール送信には使えないので、その場で気づけるようにする。
+                <p className="mt-1 text-xs text-amber-600">メールアドレスの形式ではありません（保存はできますが、メール送信には使えません）</p>
+              )}
             </div>
             <div className="col-span-2">
               <label className="block text-xs font-medium text-slate-600 mb-1">企業URL</label>
-              <input type="url" value={form.companyUrl || ''} onChange={e => set('companyUrl', e.target.value)} className={INPUT} placeholder="https://..." />
+              <input type="text" value={form.companyUrl || ''} onChange={e => set('companyUrl', e.target.value)} className={INPUT} placeholder="example.co.jp でも https://... でも可" />
+              {form.companyUrl && !toHref(form.companyUrl) && (
+                <p className="mt-1 text-xs text-amber-600">リンクとして開けない形式です（保存はできます）</p>
+              )}
             </div>
           </div>
           <div>
@@ -493,8 +514,13 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
           {item.companyUrl && (
             <div className="bg-slate-50 rounded-lg px-3 py-2">
               <p className="text-[10px] text-slate-400 font-medium mb-1">企業URL</p>
-              <a href={item.companyUrl} target="_blank" rel="noopener noreferrer"
-                className="text-sm text-[#2d6a9e] hover:underline break-all">{item.companyUrl}</a>
+              {toHref(item.companyUrl) ? (
+                <a href={toHref(item.companyUrl)} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-[#2d6a9e] hover:underline break-all">{item.companyUrl}</a>
+              ) : (
+                // URLとして開けない値でも、登録した内容は消さずにそのまま見せる
+                <p className="text-sm text-slate-500 break-all">{item.companyUrl}</p>
+              )}
             </div>
           )}
 
