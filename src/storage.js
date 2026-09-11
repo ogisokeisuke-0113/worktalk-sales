@@ -4,39 +4,13 @@ const SETTINGS_KEY = 'worktalk_settings'
 const USERS_KEY = 'worktalk_users'
 const CURRENT_USER_KEY = 'worktalk_current_user'
 
-export function loadProposals() {
-  try {
-    const data = localStorage.getItem(PROPOSALS_KEY)
-    return data ? JSON.parse(data) : []
-  } catch {
-    return []
-  }
-}
-
-export function saveProposals(proposals) {
-  try {
-    localStorage.setItem(PROPOSALS_KEY, JSON.stringify(proposals))
-  } catch (e) {
-    console.warn('[storage] saveProposals: localStorage quota exceeded, skipping cache')
-  }
-}
-
-export function loadTeleapo() {
-  try {
-    const data = localStorage.getItem(TELEAPO_KEY)
-    return data ? JSON.parse(data) : []
-  } catch {
-    return []
-  }
-}
-
-export function saveTeleapo(items) {
-  try {
-    localStorage.setItem(TELEAPO_KEY, JSON.stringify(items))
-  } catch (e) {
-    console.warn('[storage] saveTeleapo: localStorage quota exceeded, skipping cache')
-  }
-}
+// 提案リストとテレアポリストは件数が多く localStorage の5MB上限に収まらない。
+// IndexedDB へ移したので、ここでは同期的に空を返し、
+// 実体の読み込みは App 側で lib/cache.js 経由の非同期で行う。
+export function loadProposals() { return [] }
+export function saveProposals() { /* lib/cache.js が担当 */ }
+export function loadTeleapo() { return [] }
+export function saveTeleapo() { /* lib/cache.js が担当 */ }
 
 export function loadSettings() {
   try {

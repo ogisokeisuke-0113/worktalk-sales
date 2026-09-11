@@ -33,10 +33,18 @@ function mk(id, companyName, phone) {
 // ── 静的配信 ───────────────────────────────────────────────
 const root = fs.mkdtempSync('/tmp/wte2e-');
 fs.mkdirSync(path.join(root, 'worktalk-sales/assets'), { recursive: true });
-fs.copyFileSync(BUNDLE, path.join(root, 'worktalk-sales/assets/app.js'));
-const CSS = process.env.CSS_PATH || path.join(path.dirname(path.resolve(BUNDLE)), 'app.css');
-if (fs.existsSync(CSS)) fs.copyFileSync(CSS, path.join(root, 'worktalk-sales/assets/app.css'));
-fs.writeFileSync(
+// BUNDLE がディレクトリなら dist 一式をそのまま配る（コード分割に対応）
+const BUNDLE_IS_DIR = fs.existsSync(BUNDLE) && fs.statSync(BUNDLE).isDirectory();
+if (BUNDLE_IS_DIR) {
+  fs.cpSync(BUNDLE, path.join(root, 'worktalk-sales'), { recursive: true });
+} else {
+  fs.copyFileSync(BUNDLE, path.join(root, 'worktalk-sales/assets/app.js'));
+}
+if (!BUNDLE_IS_DIR) {
+  const CSS = process.env.CSS_PATH || path.join(path.dirname(path.resolve(BUNDLE)), 'app.css');
+  if (fs.existsSync(CSS)) fs.copyFileSync(CSS, path.join(root, 'worktalk-sales/assets/app.css'));
+}
+if (!BUNDLE_IS_DIR) fs.writeFileSync(
   path.join(root, 'worktalk-sales/index.html'),
   `<!doctype html><html lang="ja"><head><meta charset="UTF-8">
    <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -68,6 +76,7 @@ const server = http.createServer((req, res) => {
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 
   const upserts = [];          // teleapo_items への書き込みを全部記録
+  const callLogs = [];         // call_logs への追記を全部記録
   let startupUpsertRows = 0;
   let booted = false;
   let failsLeft = SCENARIO === 'failretry' ? 2 : 0;
@@ -82,6 +91,15 @@ const server = http.createServer((req, res) => {
 
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
 
+    if (url.includes('/auth/v1/')) {
+      if (url.includes('/token')) {
+        return json({ access_token: 'x', token_type: 'bearer', expires_in: 86400,
+          expires_at: Math.floor(Date.now()/1000)+86400, refresh_token: 'r',
+          user: { id: 'auth-test-1', email: 'test@example.com', user_metadata: {} } });
+      }
+      return json({ id: 'auth-test-1', email: 'test@example.com', user_metadata: {} });
+    }
+
     if (req.method() === 'GET') {
       if (url.includes('/teleapo_items')) {
         if (url.includes('id=in.')) {                       // マージ用の既存取得
@@ -92,6 +110,11 @@ const server = http.createServer((req, res) => {
       if (url.includes('/users')) return json([{ data: USER }]);
       if (url.includes('/proposals') || url.includes('/download_leads')) return json([]);
       if (url.includes('/app_settings')) return json([]);
+      return json([]);
+    }
+
+    if (req.method() === 'POST' && url.includes('/call_logs')) {
+      try { callLogs.push(...JSON.parse(req.postData() || '[]')); } catch (_) {}
       return json([]);
     }
 
@@ -121,6 +144,27 @@ const server = http.createServer((req, res) => {
       localStorage.setItem('worktalk_users', JSON.stringify([u]));
       if (!window.__skipCache) localStorage.setItem('worktalk_teleapo', JSON.stringify(items));
     } catch (e) { console.warn('seed quota', e.message) }
+
+    // Supabase Auth のセッションを仕込む（実際のログインは通さない）
+    const b64 = o => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o))))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const exp = Math.floor(Date.now() / 1000) + 86400;
+    const jwt = [
+      b64({ alg: 'HS256', typ: 'JWT' }),
+      b64({ sub: 'auth-test-1', email: 'test@example.com', role: 'authenticated', exp, aud: 'authenticated' }),
+      'sig',
+    ].join('.');
+    const session = {
+      access_token: jwt, token_type: 'bearer', expires_in: 86400, expires_at: exp,
+      refresh_token: 'test-refresh',
+      user: {
+        id: 'auth-test-1', aud: 'authenticated', role: 'authenticated',
+        email: 'test@example.com', email_confirmed_at: new Date().toISOString(),
+        app_metadata: {}, user_metadata: { name: u.name, users_id: u.id },
+        created_at: new Date().toISOString(),
+      },
+    };
+    try { localStorage.setItem('sb-antqewvlzfonsakgndxt-auth-token', JSON.stringify(session)); } catch (e) {}
   }, [USER, ITEMS]);
 
   await page.goto(`http://127.0.0.1:${port}/worktalk-sales/`, { waitUntil: 'domcontentloaded', timeout: 90000 });
@@ -141,16 +185,19 @@ const server = http.createServer((req, res) => {
       await box.fill(company);
       await page.waitForTimeout(400);
     }
-    await page.getByText(company, { exact: true }).first().click();     // 詳細パネルを開く
-    const panel = page.locator('div.fixed.inset-0').last();
+    await page.getByText(company, { exact: true }).first().click();          // 詳細パネルを開く
+    // DOM の並び順に依存しないよう、中身で対象を特定する
+    const panel = page.locator('div.fixed.inset-0')
+      .filter({ has: page.getByRole('button', { name: '架電を記録' }) }).first();
     await panel.getByRole('button', { name: '架電を記録' }).click();
-    const modal = page.locator('div.fixed.inset-0').last();             // 記録モーダル
+    const modal = page.locator('div.fixed.inset-0')
+      .filter({ has: page.getByRole('button', { name: '記録する', exact: true }) }).first();
     await modal.locator('select').filter({ has: page.locator('option', { hasText: result }) })
       .first().selectOption(result);
     await modal.getByRole('button', { name: '記録する', exact: true }).click();
-    await page.waitForTimeout(150);
-    await page.locator('div.fixed.inset-0').last().getByText('×', { exact: true }).click();
-    await page.waitForTimeout(150);
+    await page.waitForTimeout(200);
+    await page.locator('div.fixed.inset-0').getByText('×', { exact: true }).last().click();
+    await page.waitForTimeout(200);
   }
 
   upserts.length = 0;
@@ -181,6 +228,10 @@ const server = http.createServer((req, res) => {
   }
   out.sentIds = [...sentIds];
   out.sentWithHistory = [...sentWithHistory];
+  out.callLogs = callLogs.map(r => ({
+    company: r.company_name, caller: r.caller, result: r.result,
+    dedup_key: r.dedup_key, called_at: r.called_at ? 'あり' : null, source: r.source,
+  }));
   out.indicatorExists = SCENARIO === 'unload' ? null : await page.locator('[role="status"]').count();
   out.errors = errors.slice(0, 6);
 

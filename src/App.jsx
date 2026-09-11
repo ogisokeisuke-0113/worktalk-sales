@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, saveSettings, loadUsers, saveUsers, loadCurrentUser, saveCurrentUser, loadPerformance, savePerformance, loadDeletedKeys, saveDeletedKeys, loadDownloadLeads, saveDownloadLeads } from './storage'
 import { db } from './lib/db'
 import { supabase, isSupabaseEnabled } from './lib/supabase'
 import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
+import { cacheGet, cacheSet, dropLegacyCache } from './lib/cache'
 import SaveIndicator from './components/SaveIndicator'
+import PasswordChangeModal from './components/PasswordChangeModal'
 import { EMPLOYEE_SCALES } from './constants'
-import Dashboard from './components/Dashboard'
-import ProposalList from './components/ProposalList'
-import SalesRepView from './components/SalesRepView'
-import TeleapoList from './components/TeleapoList'
-import Settings from './components/Settings'
+const Dashboard = lazy(() => import('./components/Dashboard'))
+const ProposalList = lazy(() => import('./components/ProposalList'))
+const SalesRepView = lazy(() => import('./components/SalesRepView'))
+const TeleapoList = lazy(() => import('./components/TeleapoList'))
+const Settings = lazy(() => import('./components/Settings'))
 import LoginScreen from './components/LoginScreen'
 
 const TABS = [
@@ -224,6 +226,28 @@ export default function App() {
   const [users, setUsers] = useState(() => loadUsers())
   const [currentUser, setCurrentUser] = useState(() => loadCurrentUser())
   const [authReady, setAuthReady] = useState(false)
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
+
+  // ── 起動直後は IndexedDB のキャッシュを出して待ち時間を減らす ──
+  // サーバーからの取得が先に終わっていたら何もしない（上書きしない）。
+  // 比較基準も同時に入れる。入れないと全件が「変更あり」になって丸ごと送り返される。
+  useEffect(() => {
+    let cancelled = false
+    dropLegacyCache()
+    ;(async () => {
+      const [p, t] = await Promise.all([cacheGet('proposals'), cacheGet('teleapo')])
+      if (cancelled) return
+      if (Array.isArray(p) && p.length && !prevProposalsRef.current) {
+        prevProposalsRef.current = p
+        setProposals(p)
+      }
+      if (Array.isArray(t) && t.length && !prevTeleapoRef.current) {
+        prevTeleapoRef.current = t
+        setTeleapoItems(t)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // ── ログイン状態は Supabase Auth のセッションを正とする ──
   // 以前は「名前を選ぶだけ」で、users.password は全員空だった。
@@ -299,8 +323,8 @@ export default function App() {
   const [settings, setSettings] = useState(() => loadSettings())
   const [performance, setPerformance] = useState(() => loadPerformance())
 
-  useEffect(() => { saveProposals(proposals) }, [proposals])
-  useEffect(() => { saveTeleapo(teleapoItems) }, [teleapoItems])
+  useEffect(() => { cacheSet('proposals', proposals) }, [proposals])
+  useEffect(() => { cacheSet('teleapo', teleapoItems) }, [teleapoItems])
   useEffect(() => { saveSettings(settings) }, [settings])
   useEffect(() => { saveUsers(users) }, [users])
   useEffect(() => { saveCurrentUser(currentUser) }, [currentUser])
@@ -497,12 +521,9 @@ export default function App() {
     setCurrentUser(null)
   }
 
-  const handleChangePassword = async () => {
-    const pw = window.prompt('新しいパスワードを入力してください（8文字以上）')
-    if (pw === null) return
-    if (pw.length < 8) { window.alert('8文字以上にしてください'); return }
-    const { error } = await supabase.auth.updateUser({ password: pw })
-    window.alert(error ? `変更できませんでした: ${error.message}` : 'パスワードを変更しました')
+  const handleChangePassword = () => {
+    setShowUserMenu(false)
+    setShowPasswordModal(true)
   }
 
   const promoteToProposal = (teleapoItem) => {
@@ -555,6 +576,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50">
       <SaveIndicator />
+      {showPasswordModal && <PasswordChangeModal onClose={() => setShowPasswordModal(false)} />}
       <header className="bg-[#2d6a9e] shadow-md">
         <div className="px-4">
           <div className="flex items-center h-14">
@@ -650,6 +672,8 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-6 py-6">
         {/* 遅延マウント + CSS hidden でフィルター状態を保持 */}
+        {/* 重いタブは開いたときに読み込む。ログイン画面ではグラフ用のコードを落とさない */}
+        <Suspense fallback={<div className="p-8 text-sm text-slate-400">読み込み中…</div>}>
         {mountedTabs.has('dashboard') && (
           <div className={activeTab !== 'dashboard' ? 'hidden' : ''}>
             <Dashboard proposals={proposals} teleapoItems={teleapoItems} onNavigate={navigateToProposals} onNavigateTeleapo={navigateToTeleapo} users={users} />
@@ -714,6 +738,7 @@ export default function App() {
             />
           </div>
         )}
+        </Suspense>
       </main>
     </div>
   )

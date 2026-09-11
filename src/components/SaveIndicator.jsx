@@ -25,6 +25,10 @@ export default function SaveIndicator() {
         setState({ kind: 'error', n: d.n || 0, msg: d.msg })
       } else if (d.state === 'authError') {
         setState({ kind: 'authError', n: d.n || 0, msg: d.msg })
+      } else if (d.state === 'staleDelete') {
+        // 保存の失敗表示が出ているときは、そちらを優先して隠さない
+        setState(prev => (prev && (prev.kind === 'error' || prev.kind === 'authError')) ? prev : { kind: 'staleDelete' })
+        hideTimer = setTimeout(() => setState(null), 8000)
       }
     }
     window.addEventListener('wt-save', onSave)
@@ -45,18 +49,26 @@ export default function SaveIndicator() {
     saved: 'bg-emerald-50 text-emerald-800 pointer-events-none',
     error: 'bg-rose-50 text-rose-800 cursor-pointer',
     authError: 'bg-amber-50 text-amber-900 cursor-pointer ring-2 ring-amber-400',
+    staleDelete: 'bg-sky-50 text-sky-900 cursor-pointer',
   }[state.kind]
 
   return (
     <div
       role="status"
-      onClick={state.kind === 'error' ? retryNow : state.kind === 'authError' ? () => window.location.reload() : undefined}
+      onClick={
+        state.kind === 'error' ? retryNow
+        : (state.kind === 'authError' || state.kind === 'staleDelete') ? () => window.location.reload()
+        : undefined
+      }
       className={`fixed right-4 bottom-4 z-[9999] flex items-center gap-2 px-4 py-2.5 rounded-lg shadow-lg text-sm font-medium max-w-[82vw] ${style}`}
     >
       {state.kind === 'saving' && <span>保存中… {state.n}件</span>}
       {state.kind === 'saved' && <span>保存しました {state.n}件</span>}
       {state.kind === 'error' && (
         <span>⚠ 保存できていません（未送信 {state.n}件・再試行中）タップで即時再送</span>
+      )}
+      {state.kind === 'staleDelete' && (
+        <span>他の人が企業を削除しました。タップして再読み込みすると反映されます</span>
       )}
       {state.kind === 'authError' && (
         <span>⚠ ログインが必要です（未送信 {state.n}件）タップして再読み込み → ログインしてください</span>

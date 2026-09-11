@@ -30,7 +30,6 @@ function TemplateEditor({ template, onSave, onCancel }) {
 
 export default function Settings({ settings, setSettings, users, setUsers, currentUser, syncStatus, onSync, onImportTeleapo }) {
   const [newUserName, setNewUserName] = useState('')
-  const [newUserPassword, setNewUserPassword] = useState('')
   const [userError, setUserError] = useState('')
   const [userSuccess, setUserSuccess] = useState('')
   const [importStatus, setImportStatus] = useState('')
@@ -59,10 +58,12 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
     const trimmed = newUserName.trim()
     if (!trimmed) { setUserError('名前を入力してください'); return }
     if (users.some(u => u.name === trimmed)) { setUserError('この名前は既に登録されています'); return }
-    const user = { id: crypto.randomUUID(), name: trimmed, password: newUserPassword || '', createdAt: new Date().toISOString() }
+    // パスワードはここでは扱わない。ログインは Supabase Auth が担当し、
+    // アカウントは管理者が Supabase 側で発行する。
+    // ここで追加するのは、担当営業の選択肢に出すための名簿レコード。
+    const user = { id: crypto.randomUUID(), name: trimmed, createdAt: new Date().toISOString() }
     setUsers(prev => [...prev, user])
     setNewUserName('')
-    setNewUserPassword('')
     setUserSuccess(`${trimmed} を追加しました`)
     setTimeout(() => setUserSuccess(''), 2000)
   }
@@ -285,10 +286,12 @@ export default function Settings({ settings, setSettings, users, setUsers, curre
           <div className="flex gap-2">
             <input type="text" value={newUserName} onChange={e => setNewUserName(e.target.value)} placeholder="名前"
               className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-            <input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="パスワード（任意）"
-              className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
             <button onClick={handleAddUser} className="px-4 py-2 bg-[#2d6a9e] text-white text-sm rounded-md hover:bg-[#1a5285] transition-colors whitespace-nowrap">追加</button>
           </div>
+          <p className="mt-2 text-xs text-slate-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 leading-relaxed">
+            ここで追加できるのは「担当営業」の選択肢に出す名簿だけです。<br />
+            ログインできるようにするには、別途 Supabase でアカウントの発行が必要です。
+          </p>
           {userError && <p className="text-sm text-red-500 mt-2">{userError}</p>}
           {userSuccess && <p className="text-sm text-green-600 mt-2">{userSuccess}</p>}
         </div>

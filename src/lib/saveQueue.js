@@ -205,8 +205,17 @@ export function subscribeChanges(supabase, table, queue, setItems) {
     g[table] = supabase
       .channel(`wt-${table}`)
       .on('postgres_changes', { event: '*', schema: 'public', table }, payload => {
-        // 削除は反映しない。誤爆したときの被害が大きすぎるのでリロードまで待つ。
-        if (payload && (payload.eventType === 'DELETE' || payload.event === 'DELETE')) return
+        const isDelete = payload && (payload.eventType === 'DELETE' || payload.event === 'DELETE')
+        if (isDelete) {
+          // 画面からは消さない。取り違えて消すと被害が大きいので、
+          // 「消えているので再読み込みしてください」と知らせるだけにする。
+          try {
+            window.dispatchEvent(new CustomEvent('wt-save', {
+              detail: { state: 'staleDelete', queue: table },
+            }))
+          } catch { /* noop */ }
+          return
+        }
         if (payload && payload.new) queue.applyRemote(setItems, payload.new)
       })
       .subscribe(status => {
