@@ -1793,6 +1793,19 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }, [bookmarks])
   const [subTab, setSubTab] = useState('list') // 'list' | 'downloads'
   const [page, setPage] = useState('search') // 'search' | 'results'
+
+  // 画面が切り替わったときだけ一番上へ戻す。
+  // 検索パネルは縦に長いので、そのままだと一覧が途中から表示されてしまう。
+  //
+  // 「切り替わったときだけ」に限定しているのが要点で、
+  // 「もっと表示」で続きを読み込んだとき、詳細パネルを閉じたとき、
+  // 架電を記録したとき、他の人の更新が届いたときには動かさない。
+  // それらで一番上へ飛ぶと、リストの途中で作業している人が位置を見失う。
+  useEffect(() => {
+    // smooth にすると長いページでは戻りきるまで操作できないので即座に移動する。
+    // 動きが無いので prefers-reduced-motion への配慮も不要。
+    window.scrollTo(0, 0)
+  }, [page, subTab])
   const [showModal, setShowModal] = useState(false)
 
   // 日付をまたいだKeepを起動時に自動解除
