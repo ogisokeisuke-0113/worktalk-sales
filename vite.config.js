@@ -8,15 +8,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // 依存ライブラリを分けて、アプリ側の修正だけを配信したときに
-        // ブラウザのキャッシュが効くようにする。
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return
-          if (/recharts|d3-|victory|decimal\.js/.test(id)) return 'charts'
-          if (/@supabase|@?supabase/.test(id)) return 'supabase'
-          if (/[\\/]react(-dom|-is)?[\\/]|scheduler/.test(id)) return 'react'
-          return 'vendor'
-        },
+        // 手動でバケット分けすると共有モジュールが意図しない側に入り、
+        // 初回に不要なチャンクまで modulepreload されてしまう。
+        // 分割は lazy() によるタブ単位のものだけに任せる。
       },
     },
   },
