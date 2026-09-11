@@ -29,14 +29,11 @@ jobs:
 
       - run: npm ci
 
+      # 接続先はリポジトリの .env.production 一本に統一する。
+      # env: で VITE_SUPABASE_URL を渡すと、未設定のとき空文字で上書きされ
+      # .env.production が無効になる（2026-09-11 に実際にそれで配信が止まった）。
       - name: ビルド
         run: npm run build
-        env:
-          # バンドルに埋め込まれる値なので秘密ではないが、
-          # 差し替えられるよう Repository variables から渡す。
-          # 未設定ならリポジトリの .env.production が使われる（通常はこちら）。
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       # ── 安全装置 ────────────────────────────────────────────
       # 架電記録の保存修正が入っていないビルドを配信させない。
