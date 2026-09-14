@@ -1,4 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import PhoneLinks from './PhoneLinks'
+import { dialHref } from '../lib/phone'
 import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS } from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
@@ -467,9 +469,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
                     <p className="text-[10px] text-[#0f766e] font-bold">採用電話番号（直通）</p>
                     <span className="text-[9px] bg-[#0b5cff] text-white rounded px-1 py-0.5 font-bold leading-none">ZOOM</span>
                   </div>
-                  <a href={`zoomphonecall://${item.recruitmentPhone}`} onClick={e => e.stopPropagation()} className="text-base font-bold text-[#0f766e] hover:underline">
-                    {item.recruitmentPhone}
-                  </a>
+                  <PhoneLinks value={item.recruitmentPhone} className="text-base font-bold" linkClassName="text-[#0f766e]" />
                 </div>
               )}
               {item.phone && (
@@ -478,7 +478,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
                     <p className="text-[10px] text-slate-400 font-medium">代表電話番号</p>
                     <span className="text-[9px] bg-[#0b5cff] text-white rounded px-1 py-0.5 font-bold leading-none">ZOOM</span>
                   </div>
-                  <a href={`zoomphonecall://${item.phone}`} onClick={e => e.stopPropagation()} className="text-sm text-slate-600 hover:underline">{item.phone}</a>
+                  <PhoneLinks value={item.phone} className="text-sm" linkClassName="text-slate-600" />
                 </div>
               )}
             </div>
@@ -1546,28 +1546,26 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                       {item.recruitmentPhone && (
                         <div className={item.phone ? 'mb-1' : ''}>
                           <p className="text-[10px] text-teal-600 font-bold mb-0.5">採用直通</p>
-                          <a href={`zoomphonecall://${item.recruitmentPhone}`} onClick={e => e.stopPropagation()} className="text-sm font-bold text-teal-700 hover:underline">
-                            {item.recruitmentPhone}
-                          </a>
+                          <PhoneLinks value={item.recruitmentPhone} className="text-sm font-bold" linkClassName="text-teal-700" />
                         </div>
                       )}
                       {item.phone && (
                         <div className={item.recruitmentPhone ? 'border-t border-slate-200 pt-1' : ''}>
                           {item.recruitmentPhone && <p className="text-[10px] text-slate-400 font-medium mb-0.5">代表</p>}
-                          <a href={`zoomphonecall://${item.phone}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-slate-700 hover:underline">
-                            {item.phone}
-                          </a>
+                          <PhoneLinks value={item.phone} className="text-sm font-medium" linkClassName="text-slate-700" />
                         </div>
                       )}
                       {!phone && <p className="text-xs text-slate-400">電話番号未登録</p>}
                     </div>
                     {!isAppoConfirmed && !isOtherKeep && phone && (
+                      dialHref(phone) && (
                       <a
-                        href={`zoomphonecall://${phone}`}
+                        href={dialHref(phone)}
                         onClick={e => e.stopPropagation()}
+                        title={`Zoom Phone で発信`}
                         className="flex-shrink-0 px-4 py-1.5 rounded-lg bg-[#2d6a9e] text-white text-xs font-medium hover:bg-[#1a5285] transition-colors">
                         架電
-                      </a>
+                      </a>)
                     )}
                   </div>
 
