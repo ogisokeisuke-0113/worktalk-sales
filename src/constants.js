@@ -79,6 +79,11 @@ export const TELEAPO_STATUSES = [
   'アポ確定',
 ]
 
+// 「架電結果」の絞り込みで、まだ一度もかけていない企業も一緒に出せるようにする。
+// 不在・不通の再架電リストに、未架電のものを混ぜてかけたいという運用のため。
+// 実データの result には入らない値なので、フィルタ専用の目印として扱う。
+export const CALL_RESULT_NONE = '未架電（履歴なし）'
+
 export const CALL_RESULTS = [
   'アポ獲得',
   '受付ブロック',
@@ -89,6 +94,10 @@ export const CALL_RESULTS = [
   '折り返し依頼',
   '断り',
 ]
+
+// 絞り込み用。架電記録の入力には出さない
+//（「未架電」という結果で記録することはできないため）。
+export const CALL_RESULT_FILTER_OPTIONS = [CALL_RESULT_NONE, ...CALL_RESULTS]
 
 export const CALL_REJECTION_REASONS = [
   '充足／採用停止',

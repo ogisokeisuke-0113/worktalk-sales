@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import PhoneLinks from './PhoneLinks'
 import { dialHref } from '../lib/phone'
-import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS } from '../constants'
+import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
@@ -839,7 +839,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">架電結果</label>
-              <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULTS} placeholder="すべて" fullWidth />
+              <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULT_FILTER_OPTIONS} placeholder="すべて" fullWidth />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">架電区分</label>
@@ -1369,7 +1369,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-500 mb-1">架電結果（累積履歴に含む）</label>
-                <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULTS} placeholder="すべて" fullWidth />
+                <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULT_FILTER_OPTIONS} placeholder="すべて" fullWidth />
               </div>
               {allListSources.length > 0 && (
                 <div>
@@ -1996,7 +1996,13 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       }
       if (filters.callResult.length) {
         const history = item.callHistory || []
-        if (!history.some(c => filters.callResult.includes(c.result))) return false
+        // 「未架電（履歴なし）」は result の値ではなく「履歴が1件も無い」こと。
+        // 他の結果と同時に選べるので、どちらかに当てはまれば残す。
+        const wantNone = filters.callResult.includes(CALL_RESULT_NONE)
+        const wantResults = filters.callResult.filter(v => v !== CALL_RESULT_NONE)
+        const hitNone = wantNone && history.length === 0
+        const hitResult = wantResults.length > 0 && history.some(c => wantResults.includes(c.result))
+        if (!hitNone && !hitResult) return false
       }
       if ((filters.listSource || []).length && !filters.listSource.includes(item.listSource || '')) return false
       if (filters.nextCallDateUntil && (!item.nextCallDate || item.nextCallDate > filters.nextCallDateUntil)) return false
