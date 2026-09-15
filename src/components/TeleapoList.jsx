@@ -410,6 +410,11 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                 {item.status}
               </span>
+              {item.salesRep && item.salesRep !== '未確定' && (
+                <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                  担当確定 {item.salesRep}
+                </span>
+              )}
               {item.emailStatus && item.emailStatus !== '未送信' && (
                 <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${EMAIL_STATUS_COLORS[item.emailStatus] || 'bg-slate-100 text-slate-400'}`}>
                   📧 {item.emailStatus}
@@ -1416,6 +1421,9 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
           const keepActive = isKeepActive(item)
           const isOtherKeep = keepActive && item.keptBy && item.keptBy !== currentUser?.name
           const isAppoConfirmed = item.status === 'アポ確定'
+          /* 担当営業が決まっている企業は他の担当が持っているので、一覧で見分けられるようにする。
+             salesRep の初期値は '未確定' なので、それ以外が入っていれば「確定」扱い。 */
+          const assignedRep = item.salesRep && item.salesRep !== '未確定' ? item.salesRep : null
           const appoDate = isAppoConfirmed
             ? (item.appoDate || history.find(c => c.result === 'アポ獲得')?.date || null)
             : null
@@ -1431,6 +1439,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 isAppoConfirmed ? 'border-teal-400 border-2' :
                 isOtherKeep ? 'opacity-60 border-slate-200' :
                 keepActive ? 'border-amber-400 border-2' :
+                assignedRep ? 'border-violet-300 border-2' :
                 'border-slate-200 hover:border-slate-300'
               }`}>
 
@@ -1461,6 +1470,11 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                   {item.status}
                 </span>
+                {assignedRep && (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                    担当確定 {assignedRep}
+                  </span>
+                )}
                 {priority > 0 && (
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${PRIORITY_COLORS[priority]}`}>
                     優先 {PRIORITY_LABELS[priority]}
@@ -1510,7 +1524,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                     {item.prefecture && <p>{item.prefecture}</p>}
                     {keepActive && item.keptBy
                       ? <p>Keep: {item.keptBy}</p>
-                      : isAppoConfirmed && item.salesRep && item.salesRep !== '未確定' && <p>担当: {item.salesRep}</p>
+                      : assignedRep && <p>担当: {assignedRep}</p>
                     }
                     {appoDate && (
                       <p className="text-teal-600 font-medium">
