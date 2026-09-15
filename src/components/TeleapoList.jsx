@@ -597,7 +597,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
 }
 
 /* ───────────────────── 検索画面 ───────────────────── */
-function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkCount = 0 }) {
+function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, callResultOptions = CALL_RESULT_FILTER_OPTIONS, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkCount = 0 }) {
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
   const activeCount = [
@@ -844,7 +844,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">架電結果</label>
-              <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULT_FILTER_OPTIONS} placeholder="すべて" fullWidth />
+              <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={callResultOptions} placeholder="すべて" fullWidth />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">架電区分</label>
@@ -988,7 +988,7 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 }
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
-function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, settings = {}, allListSources = [], onAddNew,
+function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
   bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), onToggleBookmark }) {
   // 一度に描画する件数。9,647件を全部描くと DOM が28万ノードになり、
   // 表示に6秒かかってスクロールも重くなる。必要な分だけ描いて継ぎ足す。
@@ -1374,7 +1374,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
               </div>
               <div className="col-span-2">
                 <label className="block text-xs font-medium text-slate-500 mb-1">架電結果（累積履歴に含む）</label>
-                <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={CALL_RESULT_FILTER_OPTIONS} placeholder="すべて" fullWidth />
+                <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={callResultOptions} placeholder="すべて" fullWidth />
               </div>
               {allListSources.length > 0 && (
                 <div>
@@ -1929,6 +1929,17 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     return ['未確定', ...sorted]
   }, [items, proposals, users])
 
+  /* 架電結果の絞り込み候補。定型の選択肢に加えて、実データにしか存在しない結果
+     （Zoom履歴から復元した「（復元・要確認）」や、旧リスト由来の「受けブロ」など）も
+     拾って並べる。そうしないと記録はあるのに絞り込めない結果が出てしまう。 */
+  const callResultOptions = useMemo(() => {
+    const extra = new Set()
+    items.forEach(i => (i.callHistory || []).forEach(c => {
+      if (c.result && !CALL_RESULTS.includes(c.result)) extra.add(c.result)
+    }))
+    return [...CALL_RESULT_FILTER_OPTIONS, ...[...extra].sort()]
+  }, [items])
+
   const allListSources = useMemo(() => {
     const set = new Set()
     items.forEach(i => { if (i.listSource) set.add(i.listSource) })
@@ -2215,6 +2226,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           stats={stats}
           salesReps={salesReps}
           allListSources={allListSources}
+          callResultOptions={callResultOptions}
           allPrefectures={allPrefectures}
           onAddNew={() => { setEditItem(null); setShowModal(true) }}
           onCsvImport={() => setShowCsvImport(true)}
@@ -2241,6 +2253,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           salesReps={salesReps}
           settings={settings}
           allListSources={allListSources}
+          callResultOptions={callResultOptions}
           onAddNew={name => { setInitialCompanyName(name); setEditItem(null); setShowModal(true) }}
         />
       )}
