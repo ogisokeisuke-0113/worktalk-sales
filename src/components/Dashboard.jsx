@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line,
 } from 'recharts'
-import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES } from '../constants'
+import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES, CONNECTED_RESULTS } from '../constants'
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
@@ -567,7 +567,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       })
       return s + keeps.length
     }, 0)
-    const connected = allCalls.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+    const connected = allCalls.filter(c => CONNECTED_RESULTS.has(c.result)).length
     const connectionRate = totalCalls > 0 ? Number(((connected / totalCalls) * 100).toFixed(1)) : 0
     const digestRate = total > 0 ? Number(((called / total) * 100).toFixed(1)) : 0
     const appoRate = called > 0 ? Number(((appoConfirmed / called) * 100).toFixed(1)) : 0
@@ -660,7 +660,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       map[key].companies++
       const history = item.callHistory || []
       map[key].calls += history.length
-      map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+      map[key].connected += history.filter(c => CONNECTED_RESULTS.has(c.result)).length
     })
     teleapoAppoFiltered.forEach(item => {
       const key = item.industry || '(未設定)'
@@ -685,7 +685,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       map[key].companies++
       const history = item.callHistory || []
       map[key].calls += history.length
-      map[key].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+      map[key].connected += history.filter(c => CONNECTED_RESULTS.has(c.result)).length
     })
     teleapoAppoFiltered.forEach(item => {
       const key = item.employeeScale || '(未設定)'
@@ -716,7 +716,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         ensureKey(key)
         map[key].calls++
         map[key].companySet.add(item.id)
-        if (!['不在', '受付ブロック'].includes(c.result)) map[key].connected++
+        if (CONNECTED_RESULTS.has(c.result)) map[key].connected++
       })
     })
     teleapoFiltered.forEach(item => {
@@ -816,7 +816,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       const history = item.callHistory || []
       map[ind][sc].companies++
       map[ind][sc].calls += history.length
-      map[ind][sc].connected += history.filter(c => !['不在', '受付ブロック'].includes(c.result)).length
+      map[ind][sc].connected += history.filter(c => CONNECTED_RESULTS.has(c.result)).length
     })
     teleapoAppoFiltered.forEach(item => {
       const ind = item.industry || '(未設定)'
@@ -1048,7 +1048,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     ]
     return groups.map(g => {
       const called = g.items.filter(i => (i.callHistory || []).length > 0)
-      const connected = called.filter(i => (i.callHistory || []).some(c => !['不在', '受付ブロック'].includes(c.result)))
+      const connected = called.filter(i => (i.callHistory || []).some(c => CONNECTED_RESULTS.has(c.result)))
       const appo = g.items.filter(i => i.status === 'アポ確定')
       return {
         name: g.label,
@@ -1068,7 +1068,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         if (!c.date) return
         const hour = new Date(c.date).getHours()
         map[hour].calls++
-        if (!['不在', '受付ブロック'].includes(c.result)) map[hour].connected++
+        if (CONNECTED_RESULTS.has(c.result)) map[hour].connected++
       })
     })
     return map.filter(d => d.calls > 0).map(d => ({
@@ -1083,7 +1083,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         if (!c.date) return
         const day = new Date(c.date).getDay()
         map[day].calls++
-        if (!['不在', '受付ブロック'].includes(c.result)) map[day].connected++
+        if (CONNECTED_RESULTS.has(c.result)) map[day].connected++
       })
     })
     return map.map(d => ({ ...d, connectionRate: d.calls > 0 ? Number(((d.connected / d.calls) * 100).toFixed(1)) : 0 }))
@@ -1254,7 +1254,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               <KpiCard label="総架電数" value={teleapoStats.totalCalls} suffix="件" color="blue"
                 sub={`消化率 ${teleapoStats.digestRate}%`} />
               <KpiCard label="接続率" value={teleapoStats.connectionRate} suffix="%" color="green"
-                sub="不在・受付ブロック除く" />
+                sub="担当者と話せた件数÷総架電数" />
               <KpiCard label="アポ確定" value={teleapoStats.appoConfirmed} suffix="社" color="purple"
                 sub={`確定率 ${teleapoStats.appoRate}%（架電済比）`}
                 onClick={() => navigateTeleapoWithFilters({ status: ['アポ確定'] })} />
@@ -1496,7 +1496,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               }
 
               return (
-                <ChartCard title="業種 × 従業員規模 クロス集計" sub="母数：架電済み企業 ｜ 通電率＝不在・受付ブロック除く ｜ 確定率＝アポ確定社数÷架電社数">
+                <ChartCard title="業種 × 従業員規模 クロス集計" sub="母数：架電済み企業 ｜ 通電率＝担当者と話せた件数÷架電数 ｜ 確定率＝アポ確定社数÷架電社数">
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse">
                       <thead>

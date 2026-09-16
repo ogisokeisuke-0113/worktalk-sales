@@ -99,6 +99,9 @@ export const CALL_RESULTS = [
 //（「未架電」という結果で記録することはできないため）。
 export const CALL_RESULT_FILTER_OPTIONS = [CALL_RESULT_NONE, ...CALL_RESULTS]
 
+// 担当者と直接話せた結果 = 接続率の分子に含める
+export const CONNECTED_RESULTS = new Set(['アポ獲得', '担当者接触', '資料送付', '折り返し依頼', '断り'])
+
 export const CALL_REJECTION_REASONS = [
   '充足／採用停止',
   '採用に困っていない',
