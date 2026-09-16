@@ -77,6 +77,24 @@ function calcPriorityScore(item, downloadLeads = []) {
 const PRIORITY_LABELS = ['', '低', '中', '高', '最高']
 const PRIORITY_COLORS = ['', 'bg-slate-100 text-slate-400', 'bg-sky-50 text-[#4a82ae]', 'bg-amber-50 text-amber-700', 'bg-rose-50 text-rose-700']
 
+/* 「担当営業」という固定の割当は廃止し、架電記録から担当者を導く。
+   ・アポ確定  → 「アポ獲得」を記録した人（＝担当確定）
+   ・それ以外  → 最後に架電した人（＝最終架電者）。架電記録が無ければ表示しない
+   旧データでアポ獲得の記録が残っていないものだけ、従来の salesRep を最後の手がかりに使う。 */
+export function personInCharge(item) {
+  if (!item) return null
+  const hist = (item.callHistory || []).filter(c => c && String(c.caller || '').trim())
+  const sorted = [...hist].sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+  if (item.status === 'アポ確定') {
+    const won = sorted.filter(c => c.result === 'アポ獲得')
+    if (won.length) return { label: '担当確定', name: String(won[won.length - 1].caller).trim() }
+    const legacy = item.salesRep && item.salesRep !== '未確定' ? item.salesRep : null
+    return legacy ? { label: '担当確定', name: legacy } : null
+  }
+  if (!sorted.length) return null
+  return { label: '最終架電者', name: String(sorted[sorted.length - 1].caller).trim() }
+}
+
 /* ───────────────────── 企業編集モーダル ───────────────────── */
 function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '' }) {
   const isEdit = !!item
@@ -116,10 +134,6 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
   const handleSubmit = (e) => {
     e.preventDefault()
     if (!form.companyName.trim()) return
-    if (form.status === 'アポ確定' && !form.salesRep) {
-      alert('アポ確定の場合は担当営業を設定してください。')
-      return
-    }
     onSave(form)
   }
 
@@ -200,13 +214,6 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
               <input type="number" value={form.employeeGrowth || ''} onChange={e => set('employeeGrowth', e.target.value)} className={INPUT} placeholder="67" />
             </div>
             {/* 営業管理 */}
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">担当営業</label>
-              <select value={form.salesRep} onChange={e => set('salesRep', e.target.value)} className={INPUT}>
-                <option value="">未設定</option>
-                {salesReps.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">ステータス</label>
               <select value={form.status} onChange={e => set('status', e.target.value)} className={INPUT}>
@@ -410,9 +417,9 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
               <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                 {item.status}
               </span>
-              {item.salesRep && item.salesRep !== '未確定' && (
+              {personInCharge(item) && (
                 <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200">
-                  担当確定 {item.salesRep}
+                  {personInCharge(item).label} {personInCharge(item).name}
                 </span>
               )}
               {item.emailStatus && item.emailStatus !== '未送信' && (
@@ -504,7 +511,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
               ['チャネル', item.channel || '新規（テレアポ）'],
               ['アポイント日', item.appointmentDate ? new Date(item.appointmentDate + 'T00:00:00').toLocaleDateString('ja-JP') : null],
               ['リストソース', item.listSource],
-              ['担当営業', item.salesRep],
+              [personInCharge(item)?.label || '最終架電者', personInCharge(item)?.name],
               ['架電回数', `${callCount}回`],
               ['次回架電予定日', item.nextCallDate ? new Date(item.nextCallDate + 'T00:00:00').toLocaleDateString('ja-JP') : null],
               ['Keep回数', (item.keepHistory || []).length > 0 ? `${(item.keepHistory || []).length}回` : null],
@@ -597,7 +604,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
 }
 
 /* ───────────────────── 検索画面 ───────────────────── */
-function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, callResultOptions = CALL_RESULT_FILTER_OPTIONS, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkCount = 0 }) {
+function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, callerOptions = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkCount = 0 }) {
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
   const activeCount = [
@@ -704,8 +711,8 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
               <MultiSelect selected={filters.status} onChange={v => setFilter('status', v)} options={TELEAPO_STATUSES} placeholder="すべて" fullWidth />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">担当営業</label>
-              <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="すべて" fullWidth />
+              <label className="block text-xs font-medium text-slate-600 mb-1">最終架電者・担当確定</label>
+              <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={callerOptions} placeholder="すべて" fullWidth />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">担当者名（先方）</label>
@@ -988,7 +995,7 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 }
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
-function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
+function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, callerOptions = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
   bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), onToggleBookmark }) {
   // 一度に描画する件数。9,647件を全部描くと DOM が28万ノードになり、
   // 表示に6秒かかってスクロールも重くなる。必要な分だけ描いて継ぎ足す。
@@ -1296,8 +1303,8 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="すべて" fullWidth />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">担当営業</label>
-                <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={salesReps} placeholder="すべて" fullWidth />
+                <label className="block text-xs font-medium text-slate-500 mb-1">最終架電者・担当確定</label>
+                <MultiSelect selected={filters.salesRep} onChange={v => setFilter('salesRep', v)} options={callerOptions} placeholder="すべて" fullWidth />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">架電回数</label>
@@ -1421,9 +1428,8 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
           const keepActive = isKeepActive(item)
           const isOtherKeep = keepActive && item.keptBy && item.keptBy !== currentUser?.name
           const isAppoConfirmed = item.status === 'アポ確定'
-          /* 担当営業が決まっている企業は他の担当が持っているので、一覧で見分けられるようにする。
-             salesRep の初期値は '未確定' なので、それ以外が入っていれば「確定」扱い。 */
-          const assignedRep = item.salesRep && item.salesRep !== '未確定' ? item.salesRep : null
+          /* 担当確定（アポ獲得を記録した人）／最終架電者（最後に架電した人）を一覧で見分けられるようにする */
+          const inCharge = personInCharge(item)
           const appoDate = isAppoConfirmed
             ? (item.appoDate || history.find(c => c.result === 'アポ獲得')?.date || null)
             : null
@@ -1439,7 +1445,6 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 isAppoConfirmed ? 'border-teal-400 border-2' :
                 isOtherKeep ? 'opacity-60 border-slate-200' :
                 keepActive ? 'border-amber-400 border-2' :
-                assignedRep ? 'border-violet-300 border-2' :
                 'border-slate-200 hover:border-slate-300'
               }`}>
 
@@ -1470,9 +1475,13 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${TELEAPO_STATUS_COLORS[item.status] || 'bg-slate-100 text-slate-600'}`}>
                   {item.status}
                 </span>
-                {assignedRep && (
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200">
-                    担当確定 {assignedRep}
+                {inCharge && (
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                    inCharge.label === '担当確定'
+                      ? 'bg-violet-50 text-violet-700 border border-violet-200'
+                      : 'bg-slate-50 text-slate-600 border border-slate-200'
+                  }`}>
+                    {inCharge.label} {inCharge.name}
                   </span>
                 )}
                 {priority > 0 && (
@@ -1524,7 +1533,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                     {item.prefecture && <p>{item.prefecture}</p>}
                     {keepActive && item.keptBy
                       ? <p>Keep: {item.keptBy}</p>
-                      : assignedRep && <p>担当: {assignedRep}</p>
+                      : inCharge && <p>{inCharge.label}: {inCharge.name}</p>
                     }
                     {appoDate && (
                       <p className="text-teal-600 font-medium">
@@ -1932,6 +1941,17 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   /* 架電結果の絞り込み候補。定型の選択肢に加えて、実データにしか存在しない結果
      （Zoom履歴から復元した「（復元・要確認）」や、旧リスト由来の「受けブロ」など）も
      拾って並べる。そうしないと記録はあるのに絞り込めない結果が出てしまう。 */
+  /* 最終架電者・担当確定の絞り込み候補。架電記録に実際に出てくる人を拾う。 */
+  const callerOptions = useMemo(() => {
+    const set = new Set()
+    items.forEach(i => (i.callHistory || []).forEach(c => {
+      const n = String(c && c.caller || '').trim()
+      if (n) set.add(n)
+    }))
+    users.forEach(u => { if (u.name) set.add(u.name) })
+    return [...set].sort()
+  }, [items, users])
+
   const callResultOptions = useMemo(() => {
     const extra = new Set()
     items.forEach(i => (i.callHistory || []).forEach(c => {
@@ -1961,7 +1981,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     return items.filter(item => {
       if (filters.status.length && !filters.status.includes(item.status)) return false
       if (filters.industry.length && !filters.industry.includes(item.industry)) return false
-      if (filters.salesRep.length && !filters.salesRep.includes(item.salesRep)) return false
+      if (filters.salesRep.length && !filters.salesRep.includes(personInCharge(item)?.name)) return false
       if (filters.employeeScale.length && !filters.employeeScale.includes(item.employeeScale)) return false
       if (filters.kept === 'true' && !isKeepActive(item)) return false
       if (filters.kept === 'false' && isKeepActive(item)) return false
@@ -2052,10 +2072,6 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }, [items, filters, searchText])
 
   const handleSave = (item) => {
-    if (item.status === 'アポ確定' && !item.salesRep) {
-      alert('アポ確定の場合は担当営業を設定してください。')
-      return
-    }
     const isNew = !items.some(i => i.id === item.id)
     if (isNew) {
       const name = (item.companyName || '').trim().toLowerCase()
@@ -2078,7 +2094,6 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           isKept: false,
           keptBy: '',
           keptAt: '',
-          ...(!item.salesRep || item.salesRep === '未確定') && currentUser?.name ? { salesRep: currentUser.name } : {},
         }
         setItems(prev => prev.map(i => i.id === promoted.id ? promoted : i))
         onPromote(promoted)
@@ -2117,7 +2132,6 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       isKept: false,
       keptBy: '',
       keptAt: '',
-      ...(!item.salesRep || item.salesRep === '未確定') && currentUser?.name ? { salesRep: currentUser.name } : {},
     }
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i))
     onPromote(updated)
@@ -2227,6 +2241,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           salesReps={salesReps}
           allListSources={allListSources}
           callResultOptions={callResultOptions}
+          callerOptions={callerOptions}
           allPrefectures={allPrefectures}
           onAddNew={() => { setEditItem(null); setShowModal(true) }}
           onCsvImport={() => setShowCsvImport(true)}
@@ -2254,6 +2269,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           settings={settings}
           allListSources={allListSources}
           callResultOptions={callResultOptions}
+          callerOptions={callerOptions}
           onAddNew={name => { setInitialCompanyName(name); setEditItem(null); setShowModal(true) }}
         />
       )}

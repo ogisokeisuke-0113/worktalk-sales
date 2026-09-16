@@ -609,7 +609,11 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       const appoDate = item.appoDate || (item.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return
       const month = String(appoDate).slice(0, 7) // YYYY-MM
-      const rep = item.salesRep || '未確定'
+      /* 担当営業の割当ではなく「アポ獲得を記録した人」で集計する。
+         旧データでその記録が無いものだけ、従来の salesRep を使う。 */
+      const won = (item.callHistory || []).filter(c => c && c.result === 'アポ獲得' && String(c.caller || '').trim())
+        .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+      const rep = won.length ? String(won[won.length - 1].caller).trim() : (item.salesRep || '未確定')
       if (!map[month]) map[month] = { month, total: 0 }
       map[month].total++
       map[month][rep] = (map[month][rep] || 0) + 1
