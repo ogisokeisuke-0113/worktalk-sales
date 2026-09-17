@@ -222,6 +222,7 @@ export const FUNNEL_COLORS = ['#dbe6f0', '#b8cfe0', '#93b5d0', '#6e9bbf', '#4a82
 export const DEFAULT_PROPOSAL = {
   id: '',
   service: '',
+  appointmentDate: '',
   initialDate: '',
   companyName: '',
   salesRep: '',

@@ -27,7 +27,7 @@ function exportCsv(proposals) {
   URL.revokeObjectURL(url)
 }
 
-export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, pendingEditProposalId, onPendingConsumed, users = [], onDeleteProposals }) {
+export default function ProposalList({ proposals, setProposals, apiKey, initialFilter, onFilterConsumed, pendingEditProposalId, onPendingConsumed, users = [], onDeleteProposals, teleapoItems = [] }) {
   const [showPanel, setShowPanel] = useState(false)
   const [showImport, setShowImport] = useState(false)
   const [editItem, setEditItem] = useState(null)
@@ -506,6 +506,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
           }}
           apiKey={apiKey}
           salesReps={salesReps}
+          teleapoItems={teleapoItems}
         />
       )}
 

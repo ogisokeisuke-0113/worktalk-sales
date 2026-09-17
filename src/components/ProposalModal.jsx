@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, LOSS_REASONS, LOSS_CATEGORIES, RECONSIDERING_TIMINGS, DEFAULT_PROPOSAL, PROPOSAL_SERVICES, CONTACT_POSITIONS, MEETING_PHASES, MEETING_CHECKS, NEXT_ACTIONS, MEETING_RESULTS } from '../constants'
 
 const MEETING_DEFAULT = {
@@ -15,10 +15,11 @@ const MEETING_DEFAULT = {
   note: '',
 }
 
-export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete, apiKey, salesReps = [] }) {
+export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete, apiKey, salesReps = [], teleapoItems = [] }) {
   const isEdit = !!proposal
   const [form, setForm] = useState({ ...DEFAULT_PROPOSAL })
   const [aiLoading, setAiLoading] = useState(false)
+  const autoFilledRef = useRef(false)
   const [aiResult, setAiResult] = useState('')
   const [activeTab, setActiveTab] = useState('info')
   const [newNote, setNewNote] = useState('')
@@ -27,6 +28,7 @@ export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete,
   const [editingMeetingId, setEditingMeetingId] = useState(null)
 
   useEffect(() => {
+    autoFilledRef.current = false
     if (proposal) {
       setForm({
         ...DEFAULT_PROPOSAL,
@@ -42,6 +44,21 @@ export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete,
       })
     }
   }, [proposal])
+
+  // テレアポ履歴からアポ獲得日を自動入力（新規作成時のみ、1回だけ）
+  useEffect(() => {
+    if (isEdit) return
+    if (!form.companyName) return
+    if (autoFilledRef.current) return
+    const item = teleapoItems.find(i => i.companyName === form.companyName)
+    if (!item) return
+    const entry = (item.callHistory || [])
+      .filter(c => c.result === 'アポ獲得' && c.date)
+      .sort((a, b) => b.date.localeCompare(a.date))[0]
+    if (!entry) return
+    setForm(prev => ({ ...prev, appointmentDate: entry.date }))
+    autoFilledRef.current = true
+  }, [form.companyName, isEdit, teleapoItems])
 
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
 
@@ -148,6 +165,7 @@ JSONのみ出力してください。`
   const handleSubmit = (e) => {
     if (e) e.preventDefault()
     if (!form.companyName.trim()) return
+    if (!isEdit && !form.appointmentDate) return
     onSave(form)
   }
 
@@ -291,7 +309,25 @@ JSONのみ出力してください。`
                 </div>
               </div>
 
+              {isEdit && !form.appointmentDate && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                  アポ獲得日が未入力です。入力すると月次ファネル分析が正確になります。
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    アポ獲得日
+                    {!isEdit && <span className="text-red-500 ml-1">*</span>}
+                  </label>
+                  <input type="date" value={form.appointmentDate || ''} onChange={e => { autoFilledRef.current = true; set('appointmentDate', e.target.value) }}
+                    required={!isEdit}
+                    className={`w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${!isEdit && !form.appointmentDate ? 'border-red-300 bg-red-50' : 'border-slate-300'}`} />
+                  {!isEdit && !form.appointmentDate && (
+                    <p className="text-xs text-red-500 mt-0.5">必須項目です</p>
+                  )}
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">初回提案日時</label>
                   <input type="date" value={form.initialDate} onChange={e => set('initialDate', e.target.value)}

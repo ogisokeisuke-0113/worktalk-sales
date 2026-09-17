@@ -736,6 +736,7 @@ export default function App() {
               pendingEditProposalId={pendingEditProposalId}
               onPendingConsumed={() => setPendingEditProposalId(null)}
               users={users}
+              teleapoItems={teleapoItems}
               onDeleteProposals={(deleted) => {
                 setDeletedKeys(prev => {
                   const next = new Set(prev)
