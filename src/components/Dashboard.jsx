@@ -7,7 +7,7 @@ import {
 } from 'recharts'
 import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES, CONNECTED_RESULTS, RELATIONSHIPS } from '../constants'
 
-const NON_TELEAPO_RELATIONSHIPS = RELATIONSHIPS.filter(r => r !== '新規')
+const NON_TELEAPO_RELATIONSHIPS = RELATIONSHIPS.filter(r => r !== '新規' && r !== '再提案')
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
