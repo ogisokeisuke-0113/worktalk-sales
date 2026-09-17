@@ -224,12 +224,12 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       won: reProposalAll.filter(p => p.status === '受注').length,
       lost: reProposalAll.filter(p => p.status === '失注').length,
     }
-    // その他獲得数: テレアポ以外・再提案以外のチャネルで initialDate が期間内のもの
+    // その他獲得数: テレアポ以外・再提案以外のチャネルで アポ獲得日(appointmentDate)が期間内のもの
     const otherAppoCount = filteredByMeeting.filter(p => {
       if (!p.relationship || p.relationship === '新規' || p.relationship === '再提案') return false
-      if (!p.initialDate) return false
-      if (dateFrom && p.initialDate < dateFrom) return false
-      if (dateTo && p.initialDate > dateTo) return false
+      if (!p.appointmentDate) return false
+      if (dateFrom && p.appointmentDate < dateFrom) return false
+      if (dateTo && p.appointmentDate > dateTo) return false
       return true
     }).length
     const totalAppoCount = teleapoAppoCount + otherAppoCount + reProposalAppoCount
