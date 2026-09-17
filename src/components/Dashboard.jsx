@@ -205,9 +205,29 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         return true
       }).length
     }, 0)
+    // テレアポ獲得数: teleapoItems の callHistory から result='アポ獲得' かつ期間内のものを集計
+    const teleapoAppoCount = teleapoItems.reduce((sum, item) => {
+      if (selectedRep.length && !selectedRep.includes(item.salesRep)) return sum
+      return sum + (item.callHistory || []).filter(c => {
+        if (c.result !== 'アポ獲得') return false
+        if (!c.date) return false
+        if (dateFrom && c.date < dateFrom) return false
+        if (dateTo && c.date > dateTo) return false
+        return true
+      }).length
+    }, 0)
+    // その他獲得数: チャネル（relationship）が '新規' 以外の提案で initialDate が期間内のもの
+    const otherAppoCount = filteredByMeeting.filter(p => {
+      if (p.relationship === '新規' || !p.relationship) return false
+      if (!p.initialDate) return false
+      if (dateFrom && p.initialDate < dateFrom) return false
+      if (dateTo && p.initialDate > dateTo) return false
+      return true
+    }).length
+    const totalAppoCount = teleapoAppoCount + otherAppoCount + meetingCount
 
-    return { total: proposals, won, wonCompanies, winRate, appoConfirmed, inProgress, lost, meetingCount }
-  }, [filtered, filteredByMeeting, dateFrom, dateTo])
+    return { total: proposals, won, wonCompanies, winRate, appoConfirmed, inProgress, lost, meetingCount, teleapoAppoCount, otherAppoCount, totalAppoCount }
+  }, [filtered, filteredByMeeting, dateFrom, dateTo, teleapoItems, selectedRep])
 
   const monthlyData = useMemo(() => {
     const map = {}
@@ -1953,15 +1973,53 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
 
       {dashboardMode === 'proposals' && proposals.length > 0 && (<>
 
-      {/* KPI Cards - Top Row: Main Metrics */}
-      <div className="grid grid-cols-2 sm:grid-cols-6 gap-5 mb-5">
-        <KpiCard label="提案数" value={stats.total} suffix="件" onClick={() => navigateWithFilters({})} />
-        <KpiCard label="追加提案商談数" value={stats.meetingCount} suffix="件" color="blue" sub="商談記録の件数" />
-        <KpiCard label="アポ確定" value={stats.appoConfirmed} suffix="件" color="blue" onClick={() => navigateWithFilters({ status: 'アポ確定' })} />
-        <KpiCard label="受注（件数）" value={stats.won} suffix="件" sub={`受注率 ${stats.winRate}%`} color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
-        <KpiCard label="受注企業数" value={stats.wonCompanies} suffix="社" color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
-        <KpiCard label="進行中" value={stats.inProgress} suffix="件" color="amber" onClick={() => navigateWithFilters({ status: '進行中' })} />
-        <KpiCard label="失注" value={stats.lost} suffix="件" color="red" onClick={() => navigateWithFilters({ status: '失注' })} />
+      {/* KPI Cards - Hierarchical Layout */}
+      <div className="flex flex-col gap-4 mb-5">
+
+        {/* 大カテゴリ: アポ獲得総数 */}
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-2.5 h-2.5 rounded-full bg-[#2d6a9e]" />
+            <span className="text-sm font-semibold text-slate-600">アポ獲得総数</span>
+            <span className="text-2xl font-bold text-[#2d6a9e] ml-2">{stats.totalAppoCount}</span>
+            <span className="text-sm text-slate-400">件</span>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <KpiCard label="テレアポ獲得数" value={stats.teleapoAppoCount} suffix="件" color="blue" small sub="架電→アポ獲得" />
+            <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル" />
+            <KpiCard label="既存顧客アポ数" value={stats.meetingCount} suffix="件" small sub="追加提案商談記録" />
+          </div>
+        </div>
+
+        {/* 大カテゴリ: 総提案数 ＋ アポ実施予定（並列） */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          {/* 総提案数 */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+              <span className="text-sm font-semibold text-slate-600">総提案数</span>
+              <span className="text-2xl font-bold text-slate-800 ml-2 cursor-pointer hover:text-[#2d6a9e] transition-colors" onClick={() => navigateWithFilters({})}>{stats.total}</span>
+              <span className="text-sm text-slate-400">件</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <KpiCard label="進行中" value={stats.inProgress} suffix="件" color="amber" small onClick={() => navigateWithFilters({ status: '進行中' })} />
+              <KpiCard label="失注" value={stats.lost} suffix="件" color="red" small onClick={() => navigateWithFilters({ status: '失注' })} />
+              <KpiCard label="受注" value={stats.won} suffix="件" color="green" small sub={`受注率 ${stats.winRate}%`} onClick={() => navigateWithFilters({ status: '受注' })} />
+            </div>
+          </div>
+
+          {/* アポ実施予定 */}
+          <div className="bg-slate-50 border border-sky-200 rounded-xl p-4 flex flex-col">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#4a82ae]" />
+              <span className="text-sm font-semibold text-slate-600">アポ実施予定</span>
+            </div>
+            <div className="flex-1 flex items-start">
+              <KpiCard label="アポ確定" value={stats.appoConfirmed} suffix="件" color="blue" onClick={() => navigateWithFilters({ status: 'アポ確定' })} />
+            </div>
+          </div>
+        </div>
       </div>
       {/* Monthly Trend - Full Width */}
       {monthlyData.length > 0 && (
