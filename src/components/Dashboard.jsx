@@ -184,9 +184,19 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const winRate = proposals > 0 ? ((won / proposals) * 100).toFixed(1) : 0
     // 受注企業数: サービスに関わらず ≥1 受注ステータスの行がある企業のユニーク数
     const wonCompanies = new Set(filtered.filter(p => p.status === '受注').map(p => p.companyName)).size
+    // 商談記録件数: meetingLog の日付が期間内のエントリ数
+    const meetingCount = filtered.reduce((sum, p) => {
+      const logs = p.meetingLog || []
+      return sum + logs.filter(m => {
+        if (!m.date) return false
+        if (dateFrom && m.date < dateFrom) return false
+        if (dateTo && m.date > dateTo) return false
+        return true
+      }).length
+    }, 0)
 
-    return { total: proposals, won, wonCompanies, winRate, appoConfirmed, inProgress, lost }
-  }, [filtered])
+    return { total: proposals, won, wonCompanies, winRate, appoConfirmed, inProgress, lost, meetingCount }
+  }, [filtered, dateFrom, dateTo])
 
   const monthlyData = useMemo(() => {
     const map = {}
@@ -1935,6 +1945,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       {/* KPI Cards - Top Row: Main Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-5 mb-5">
         <KpiCard label="提案数" value={stats.total} suffix="件" onClick={() => navigateWithFilters({})} />
+        <KpiCard label="商談実施数" value={stats.meetingCount} suffix="件" color="blue" sub="商談記録の件数" />
         <KpiCard label="アポ確定" value={stats.appoConfirmed} suffix="件" color="blue" onClick={() => navigateWithFilters({ status: 'アポ確定' })} />
         <KpiCard label="受注（件数）" value={stats.won} suffix="件" sub={`受注率 ${stats.winRate}%`} color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
         <KpiCard label="受注企業数" value={stats.wonCompanies} suffix="社" color="green" onClick={() => navigateWithFilters({ status: '受注' })} />
