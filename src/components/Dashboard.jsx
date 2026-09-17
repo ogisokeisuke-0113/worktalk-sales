@@ -209,24 +209,24 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         return true
       }).length
     }, 0)
-    // 再提案アポ数: relationship='既存CL' の提案で initialDate が期間内のもの
+    // 再提案アポ数: relationship='再提案' の提案で initialDate が期間内のもの
     const reProposalAppoCount = filteredByMeeting.filter(p => {
-      if (p.relationship !== '既存CL') return false
+      if (p.relationship !== '再提案') return false
       if (!p.initialDate) return false
       if (dateFrom && p.initialDate < dateFrom) return false
       if (dateTo && p.initialDate > dateTo) return false
       return true
     }).length
     // 再提案ステータス内訳（全期間・絞り込み条件適用）
-    const reProposalAll = filteredByMeeting.filter(p => p.relationship === '既存CL')
+    const reProposalAll = filteredByMeeting.filter(p => p.relationship === '再提案')
     const reProposalStatus = {
       inProgress: reProposalAll.filter(p => ['担当者合意', '決裁者アポ調整中', '決裁者合意'].includes(p.status)).length,
       won: reProposalAll.filter(p => p.status === '受注').length,
       lost: reProposalAll.filter(p => p.status === '失注').length,
     }
-    // その他獲得数: テレアポ以外・既存CL以外のチャネルで initialDate が期間内のもの
+    // その他獲得数: テレアポ以外・再提案以外のチャネルで initialDate が期間内のもの
     const otherAppoCount = filteredByMeeting.filter(p => {
-      if (!p.relationship || p.relationship === '新規' || p.relationship === '既存CL') return false
+      if (!p.relationship || p.relationship === '新規' || p.relationship === '再提案') return false
       if (!p.initialDate) return false
       if (dateFrom && p.initialDate < dateFrom) return false
       if (dateTo && p.initialDate > dateTo) return false
@@ -1999,7 +1999,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               onClick={() => navigateWithFilters({ relationship: NON_TELEAPO_RELATIONSHIPS })} />
             <KpiCard label="再提案アポ数" value={stats.reProposalAppoCount} suffix="件" color="green" small
               sub={[stats.reProposalStatus.inProgress > 0 && `進行中${stats.reProposalStatus.inProgress}`, stats.reProposalStatus.won > 0 && `受注${stats.reProposalStatus.won}`, stats.reProposalStatus.lost > 0 && `失注${stats.reProposalStatus.lost}`].filter(Boolean).join('・') || '受注/失注済み企業への再提案'}
-              onClick={() => onNavigate?.({ relationship: ['既存CL'], _dashboardFilters: { salesRep: selectedRep, industry: selectedIndustry, relationship: [], dateFrom: dateFrom || '', dateTo: dateTo || '', decisionMaker: decisionMakerFilter } })} />
+              onClick={() => onNavigate?.({ relationship: ['再提案'], _dashboardFilters: { salesRep: selectedRep, industry: selectedIndustry, relationship: [], dateFrom: dateFrom || '', dateTo: dateTo || '', decisionMaker: decisionMakerFilter } })} />
           </div>
         </div>
 

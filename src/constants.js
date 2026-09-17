@@ -43,6 +43,7 @@ export const RELATIONSHIPS = [
   '業務委託',
   '営業代行',
   '代理店',
+  '再提案',
 ]
 
 export const LOSS_REASONS = [

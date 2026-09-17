@@ -210,7 +210,7 @@ JSONのみ出力してください。`
             {isEdit && ['受注', '失注'].includes(form.status) && onCreateReProposal && (
               <button
                 type="button"
-                onClick={() => onCreateReProposal({ companyName: form.companyName, salesRep: form.salesRep, relationship: '既存CL' })}
+                onClick={() => onCreateReProposal({ companyName: form.companyName, salesRep: form.salesRep, relationship: '再提案' })}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs text-teal-600 hover:text-teal-800 hover:bg-teal-50 border border-teal-300 rounded-md transition-colors font-medium"
               >
                 + 再提案を作成
@@ -327,7 +327,7 @@ JSONのみ出力してください。`
               {!isEdit && form.companyName && wonLostCompanyNames.has(form.companyName) && (
                 <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-teal-700 flex items-start gap-2">
                   <span className="mt-0.5">♻</span>
-                  <span><span className="font-semibold">{form.companyName}</span> は受注または失注済みです。この提案は<span className="font-semibold">再提案</span>として記録されます。チャネルを「既存CL」に設定してください。</span>
+                  <span><span className="font-semibold">{form.companyName}</span> は受注または失注済みです。この提案は<span className="font-semibold">再提案</span>として記録されます。チャネルを「再提案」に設定してください。</span>
                 </div>
               )}
 

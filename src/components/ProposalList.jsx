@@ -345,10 +345,10 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         <button
           onClick={() => setFilters(prev => ({
             ...prev,
-            relationship: prev.relationship.includes('既存CL') ? prev.relationship.filter(r => r !== '既存CL') : [...prev.relationship, '既存CL']
+            relationship: prev.relationship.includes('再提案') ? prev.relationship.filter(r => r !== '再提案') : [...prev.relationship, '再提案']
           }))}
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
-            filters.relationship.includes('既存CL')
+            filters.relationship.includes('再提案')
               ? 'bg-teal-600 text-white border-teal-600'
               : 'bg-white text-teal-700 border-teal-300 hover:bg-teal-50'
           }`}
