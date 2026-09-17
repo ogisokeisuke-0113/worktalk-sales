@@ -210,7 +210,7 @@ JSONのみ出力してください。`
             {isEdit && ['受注', '失注'].includes(form.status) && onCreateReProposal && (
               <button
                 type="button"
-                onClick={() => onCreateReProposal({ companyName: form.companyName, salesRep: form.salesRep, relationship: '再提案' })}
+                onClick={() => onCreateReProposal({ companyName: form.companyName, salesRep: form.salesRep, relationship: '再提案', contactName: form.contactName, position: form.position, industry: form.industry, employeeScale: form.employeeScale })}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs text-teal-600 hover:text-teal-800 hover:bg-teal-50 border border-teal-300 rounded-md transition-colors font-medium"
               >
                 + 再提案を作成
