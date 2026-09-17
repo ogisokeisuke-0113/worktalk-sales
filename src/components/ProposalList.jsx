@@ -40,6 +40,8 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
   const [dateTo, setDateTo] = useState('')
   const [meetingDateFrom, setMeetingDateFrom] = useState('')
   const [meetingDateTo, setMeetingDateTo] = useState('')
+  const [appointmentDateFrom, setAppointmentDateFrom] = useState(null)
+  const [appointmentDateTo, setAppointmentDateTo] = useState(null)
   const [pendingInitialValues, setPendingInitialValues] = useState(null)
   const [filters, setFilters] = useState({
     industry: [],
@@ -95,6 +97,8 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       setDateTo(df.dateTo || '')
       setMeetingDateFrom(initialFilter.meetingDateFrom || '')
       setMeetingDateTo(initialFilter.meetingDateTo || '')
+      setAppointmentDateFrom(initialFilter.appointmentDateFrom !== undefined ? initialFilter.appointmentDateFrom : null)
+      setAppointmentDateTo(initialFilter.appointmentDateTo !== undefined ? initialFilter.appointmentDateTo : null)
       setSearchText('')
       onFilterConsumed?.()
     }
@@ -150,6 +154,11 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       if (filters.service.length && !filters.service.includes(p.service)) return false
       if (dateFrom && (!p.initialDate || p.initialDate < dateFrom)) return false
       if (dateTo && (!p.initialDate || p.initialDate > dateTo)) return false
+      if (appointmentDateFrom !== null || appointmentDateTo !== null) {
+        if (!p.appointmentDate) return false
+        if (appointmentDateFrom && p.appointmentDate < appointmentDateFrom) return false
+        if (appointmentDateTo && p.appointmentDate > appointmentDateTo) return false
+      }
       if (meetingDateFrom || meetingDateTo) {
         const hasMeeting = (p.meetingLog || []).some(m => {
           if (!m.date) return false
@@ -166,7 +175,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       }
       return true
     })
-  }, [proposals, filters, searchText, dateFrom, dateTo, meetingDateFrom, meetingDateTo])
+  }, [proposals, filters, searchText, dateFrom, dateTo, meetingDateFrom, meetingDateTo, appointmentDateFrom, appointmentDateTo])
 
   const handleSave = (item) => {
     setProposals(prev => {

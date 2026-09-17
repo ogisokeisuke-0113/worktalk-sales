@@ -119,15 +119,15 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   const [decisionMakerFilter, setDecisionMakerFilter] = useState('')  // '' | 'yes' | 'no'
 
   // ダッシュボードの絞り込み状態を提案リストに引き継ぐ
-  const navigateWithFilters = (extra = {}) => {
+  const navigateWithFilters = (extra = {}, opts = {}) => {
     onNavigate?.({
       ...extra,
       _dashboardFilters: {
         salesRep: selectedRep,
         industry: selectedIndustry,
         relationship: selectedRelationship,
-        dateFrom,
-        dateTo,
+        dateFrom: opts.clearDates ? '' : dateFrom,
+        dateTo: opts.clearDates ? '' : dateTo,
         decisionMaker: decisionMakerFilter,
       },
     })
@@ -1996,10 +1996,10 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             <KpiCard label="テレアポ獲得数" value={stats.teleapoAppoCount} suffix="件" color="blue" small sub="架電→アポ獲得"
               onClick={() => onNavigateTeleapo?.({ callResult: ['アポ獲得'], callDateFrom: dateFrom || '', callDateTo: dateTo || '', _teleapoRepFilter: selectedRep })} />
             <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル"
-              onClick={() => navigateWithFilters({ excludeRelationship: ['新規', '再提案'] })} />
+              onClick={() => navigateWithFilters({ excludeRelationship: ['新規', '再提案'], appointmentDateFrom: dateFrom, appointmentDateTo: dateTo }, { clearDates: true })} />
             <KpiCard label="再提案アポ数" value={stats.reProposalAppoCount} suffix="件" color="green" small
               sub={[stats.reProposalStatus.inProgress > 0 && `進行中${stats.reProposalStatus.inProgress}`, stats.reProposalStatus.won > 0 && `受注${stats.reProposalStatus.won}`, stats.reProposalStatus.lost > 0 && `失注${stats.reProposalStatus.lost}`].filter(Boolean).join('・') || '受注/失注済み企業への再提案'}
-              onClick={() => onNavigate?.({ relationship: ['再提案'], _dashboardFilters: { salesRep: selectedRep, industry: selectedIndustry, relationship: [], dateFrom: dateFrom || '', dateTo: dateTo || '', decisionMaker: decisionMakerFilter } })} />
+              onClick={() => navigateWithFilters({ relationship: ['再提案'], appointmentDateFrom: dateFrom, appointmentDateTo: dateTo }, { clearDates: true })} />
           </div>
         </div>
 
