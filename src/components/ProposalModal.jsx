@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { INDUSTRIES, EMPLOYEE_SCALES, PROPOSAL_STATUSES, RELATIONSHIPS, LOSS_REASONS, LOSS_CATEGORIES, RECONSIDERING_TIMINGS, DEFAULT_PROPOSAL, PROPOSAL_SERVICES, CONTACT_POSITIONS, MEETING_PHASES, MEETING_CHECKS, NEXT_ACTIONS, MEETING_RESULTS } from '../constants'
 
 const MEETING_DEFAULT = {
@@ -15,7 +15,7 @@ const MEETING_DEFAULT = {
   note: '',
 }
 
-export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete, apiKey, salesReps = [], teleapoItems = [] }) {
+export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete, apiKey, salesReps = [], teleapoItems = [], initialValues = null, onCreateReProposal, allProposals = [] }) {
   const isEdit = !!proposal
   const [form, setForm] = useState({ ...DEFAULT_PROPOSAL })
   const [aiLoading, setAiLoading] = useState(false)
@@ -26,6 +26,11 @@ export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete,
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [meetingForm, setMeetingForm] = useState(null)
   const [editingMeetingId, setEditingMeetingId] = useState(null)
+
+  // 受注/失注済みの企業名セット（再提案警告用）
+  const wonLostCompanyNames = useMemo(() =>
+    new Set(allProposals.filter(p => ['受注', '失注'].includes(p.status)).map(p => p.companyName))
+  , [allProposals])
 
   useEffect(() => {
     autoFilledRef.current = false
@@ -41,9 +46,10 @@ export default function ProposalSidePanel({ proposal, onSave, onClose, onDelete,
         ...DEFAULT_PROPOSAL,
         id: crypto.randomUUID(),
         initialDate: new Date().toISOString().slice(0, 10),
+        ...(initialValues || {}),
       })
     }
-  }, [proposal])
+  }, [proposal, initialValues])
 
   // テレアポ履歴からアポ獲得日を自動入力（新規作成時のみ、1回だけ）
   useEffect(() => {
@@ -201,6 +207,15 @@ JSONのみ出力してください。`
             {isEdit ? '提案を編集' : '新規提案を追加'}
           </h3>
           <div className="flex items-center gap-2">
+            {isEdit && ['受注', '失注'].includes(form.status) && onCreateReProposal && (
+              <button
+                type="button"
+                onClick={() => onCreateReProposal({ companyName: form.companyName, salesRep: form.salesRep, relationship: '既存CL' })}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs text-teal-600 hover:text-teal-800 hover:bg-teal-50 border border-teal-300 rounded-md transition-colors font-medium"
+              >
+                + 再提案を作成
+              </button>
+            )}
             {isEdit && onDelete && (
               <button
                 onClick={() => setShowDeleteConfirm(true)}
@@ -308,6 +323,13 @@ JSONのみ出力してください。`
                   ))}
                 </div>
               </div>
+
+              {!isEdit && form.companyName && wonLostCompanyNames.has(form.companyName) && (
+                <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-teal-700 flex items-start gap-2">
+                  <span className="mt-0.5">♻</span>
+                  <span><span className="font-semibold">{form.companyName}</span> は受注または失注済みです。この提案は<span className="font-semibold">再提案</span>として記録されます。チャネルを「既存CL」に設定してください。</span>
+                </div>
+              )}
 
               {isEdit && !form.appointmentDate && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">

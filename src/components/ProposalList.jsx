@@ -40,6 +40,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
   const [dateTo, setDateTo] = useState('')
   const [meetingDateFrom, setMeetingDateFrom] = useState('')
   const [meetingDateTo, setMeetingDateTo] = useState('')
+  const [pendingInitialValues, setPendingInitialValues] = useState(null)
   const [filters, setFilters] = useState({
     industry: [],
     status: [],
@@ -106,6 +107,12 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       onPendingConsumed?.()
     }
   }, [pendingEditProposalId, proposals])
+
+  // 再提案作成: editItemがnullかつpendingInitialValuesがある場合、新規パネルを開く
+  useEffect(() => {
+    if (!pendingInitialValues || editItem) return
+    setShowPanel(true)
+  }, [pendingInitialValues, editItem])
 
   const months = useMemo(() => {
     const set = new Set()
@@ -333,6 +340,23 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         />
       </div>
 
+      {/* クイックフィルター */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        <button
+          onClick={() => setFilters(prev => ({
+            ...prev,
+            relationship: prev.relationship.includes('既存CL') ? prev.relationship.filter(r => r !== '既存CL') : [...prev.relationship, '既存CL']
+          }))}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+            filters.relationship.includes('既存CL')
+              ? 'bg-teal-600 text-white border-teal-600'
+              : 'bg-white text-teal-700 border-teal-300 hover:bg-teal-50'
+          }`}
+        >
+          ♻ 再提案のみ
+        </button>
+      </div>
+
       {/* Filters */}
       <div className="flex flex-wrap gap-2 mb-4">
         <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="全業種" />
@@ -510,18 +534,25 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       {showPanel && (
         <ProposalSidePanel
           proposal={editItem}
-          onSave={handleSave}
-          onClose={() => { setShowPanel(false); setEditItem(null) }}
+          onSave={(saved) => { handleSave(saved); setPendingInitialValues(null) }}
+          onClose={() => { setShowPanel(false); setEditItem(null); setPendingInitialValues(null) }}
           onDelete={(id) => {
             const toDelete = proposals.filter(p => p.id === id)
             onDeleteProposals?.(toDelete)
             setProposals(prev => prev.filter(p => p.id !== id))
             setShowPanel(false)
             setEditItem(null)
+            setPendingInitialValues(null)
           }}
           apiKey={apiKey}
           salesReps={salesReps}
           teleapoItems={teleapoItems}
+          initialValues={pendingInitialValues}
+          allProposals={proposals}
+          onCreateReProposal={(vals) => {
+            setEditItem(null)
+            setPendingInitialValues(vals)
+          }}
         />
       )}
 
