@@ -209,12 +209,12 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         return true
       }).length
     }, 0)
-    // 再提案アポ数: relationship='再提案' の提案で initialDate が期間内のもの
+    // 再提案アポ数: relationship='再提案' の提案でアポ獲得日(appointmentDate)が期間内のもの
     const reProposalAppoCount = filteredByMeeting.filter(p => {
       if (p.relationship !== '再提案') return false
-      if (!p.initialDate) return false
-      if (dateFrom && p.initialDate < dateFrom) return false
-      if (dateTo && p.initialDate > dateTo) return false
+      if (!p.appointmentDate) return false
+      if (dateFrom && p.appointmentDate < dateFrom) return false
+      if (dateTo && p.appointmentDate > dateTo) return false
       return true
     }).length
     // 再提案ステータス内訳（全期間・絞り込み条件適用）
