@@ -2020,34 +2020,31 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       if (filters.callCount === '0' && cc !== 0) return false
       if (filters.callCount === '1-3' && (cc < 1 || cc > 3)) return false
       if (filters.callCount === '4+' && cc < 4) return false
-      // 架電日時フィルター：いずれかの架電が指定期間内にあるか
-      if (filters.callDateFrom || filters.callDateTo) {
+      // 架電日時 × 架電結果フィルター：両方指定時は同一エントリで条件を満たす必要がある
+      {
         const history = item.callHistory || []
-        if (history.length === 0) return false
-        const from = filters.callDateFrom ? new Date(filters.callDateFrom + 'T00:00:00') : null
-        const to = filters.callDateTo ? new Date(filters.callDateTo + 'T23:59:59') : null
-        const hasMatch = history.some(c => {
-          if (!c.date) return false
-          const d = new Date(c.date)
-          if (from && d < from) return false
-          if (to && d > to) return false
-          return true
-        })
-        if (!hasMatch) return false
-      }
-      if (filters.emailStatus) {
-        const status = item.emailStatus || '未送信'
-        if (status !== filters.emailStatus) return false
-      }
-      if (filters.callResult.length) {
-        const history = item.callHistory || []
-        // 「未架電（履歴なし）」は result の値ではなく「履歴が1件も無い」こと。
-        // 他の結果と同時に選べるので、どちらかに当てはまれば残す。
-        const wantNone = filters.callResult.includes(CALL_RESULT_NONE)
-        const wantResults = filters.callResult.filter(v => v !== CALL_RESULT_NONE)
-        const hitNone = wantNone && history.length === 0
-        const hitResult = wantResults.length > 0 && history.some(c => wantResults.includes(c.result))
-        if (!hitNone && !hitResult) return false
+        const hasDateFilter = filters.callDateFrom || filters.callDateTo
+        const hasResultFilter = filters.callResult.length > 0
+        if (hasDateFilter || hasResultFilter) {
+          const from = filters.callDateFrom ? new Date(filters.callDateFrom + 'T00:00:00') : null
+          const to = filters.callDateTo ? new Date(filters.callDateTo + 'T23:59:59') : null
+          const wantNone = hasResultFilter && filters.callResult.includes(CALL_RESULT_NONE)
+          const wantResults = hasResultFilter ? filters.callResult.filter(v => v !== CALL_RESULT_NONE) : []
+          // 「未架電」条件：日付フィルターなし かつ 履歴が0件
+          const hitNone = wantNone && !hasDateFilter && history.length === 0
+          // 通常の結果条件：エントリが日付条件（あれば）AND 結果条件（あれば）を同時に満たすか
+          const hitEntry = history.some(c => {
+            if (hasDateFilter) {
+              if (!c.date) return false
+              const d = new Date(c.date)
+              if (from && d < from) return false
+              if (to && d > to) return false
+            }
+            if (wantResults.length > 0 && !wantResults.includes(c.result)) return false
+            return true
+          })
+          if (!hitNone && !hitEntry) return false
+        }
       }
       if ((filters.listSource || []).length && !filters.listSource.includes(item.listSource || '')) return false
       if (filters.nextCallDateUntil && (!item.nextCallDate || item.nextCallDate > filters.nextCallDateUntil)) return false

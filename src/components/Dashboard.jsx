@@ -1988,7 +1988,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
           </div>
           <div className="grid grid-cols-3 gap-3">
             <KpiCard label="テレアポ獲得数" value={stats.teleapoAppoCount} suffix="件" color="blue" small sub="架電→アポ獲得"
-              onClick={() => navigateTeleapoWithFilters({ callResult: ['アポ獲得'], callDateFrom: dateFrom || '', callDateTo: dateTo || '' })} />
+              onClick={() => onNavigateTeleapo?.({ callResult: ['アポ獲得'], callDateFrom: dateFrom || '', callDateTo: dateTo || '', _teleapoRepFilter: selectedRep })} />
             <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル"
               onClick={() => navigateWithFilters({ relationship: NON_TELEAPO_RELATIONSHIPS })} />
             <KpiCard label="既存顧客アポ数" value={stats.meetingCount} suffix="件" small sub="追加提案商談記録"
