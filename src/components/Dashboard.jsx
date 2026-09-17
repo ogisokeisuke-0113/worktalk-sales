@@ -1992,7 +1992,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル"
               onClick={() => navigateWithFilters({ relationship: NON_TELEAPO_RELATIONSHIPS })} />
             <KpiCard label="既存顧客アポ数" value={stats.meetingCount} suffix="件" small sub="追加提案商談記録"
-              onClick={() => navigateWithFilters({})} />
+              onClick={() => onNavigate?.({ meetingDateFrom: dateFrom || '', meetingDateTo: dateTo || '', _dashboardFilters: { salesRep: selectedRep, industry: selectedIndustry, relationship: selectedRelationship, dateFrom: '', dateTo: '', decisionMaker: decisionMakerFilter } })} />
           </div>
         </div>
 

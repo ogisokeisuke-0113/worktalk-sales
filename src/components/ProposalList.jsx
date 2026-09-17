@@ -38,6 +38,8 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
   const [searchText, setSearchText] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [meetingDateFrom, setMeetingDateFrom] = useState('')
+  const [meetingDateTo, setMeetingDateTo] = useState('')
   const [filters, setFilters] = useState({
     industry: [],
     status: [],
@@ -88,6 +90,8 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       // ダッシュボードの期間フィルターを引き継ぐ
       setDateFrom(df.dateFrom || '')
       setDateTo(df.dateTo || '')
+      setMeetingDateFrom(initialFilter.meetingDateFrom || '')
+      setMeetingDateTo(initialFilter.meetingDateTo || '')
       setSearchText('')
       onFilterConsumed?.()
     }
@@ -136,6 +140,15 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       if (filters.service.length && !filters.service.includes(p.service)) return false
       if (dateFrom && (!p.initialDate || p.initialDate < dateFrom)) return false
       if (dateTo && (!p.initialDate || p.initialDate > dateTo)) return false
+      if (meetingDateFrom || meetingDateTo) {
+        const hasMeeting = (p.meetingLog || []).some(m => {
+          if (!m.date) return false
+          if (meetingDateFrom && m.date < meetingDateFrom) return false
+          if (meetingDateTo && m.date > meetingDateTo) return false
+          return true
+        })
+        if (!hasMeeting) return false
+      }
       if (q) {
         const hay = [p.companyName, p.salesRep, p.contactName, p.industry, p.position, p.relationship, p.notes]
           .filter(Boolean).join(' ').toLowerCase()
@@ -143,7 +156,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       }
       return true
     })
-  }, [proposals, filters, searchText, dateFrom, dateTo])
+  }, [proposals, filters, searchText, dateFrom, dateTo, meetingDateFrom, meetingDateTo])
 
   const handleSave = (item) => {
     setProposals(prev => {
