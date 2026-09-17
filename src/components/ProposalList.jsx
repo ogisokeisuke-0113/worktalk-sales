@@ -45,6 +45,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
     industry: [],
     status: [],
     relationship: [],
+    excludeRelationship: [],
     priority: '',
     month: [],
     salesRep: [],
@@ -80,6 +81,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
         industry: clickIndustry.length ? clickIndustry : (df.industry || []),
         status: statusFilter,
         relationship: clickRelationship.length ? clickRelationship : (df.relationship || []),
+        excludeRelationship: initialFilter.excludeRelationship || [],
         employeeScale: clickEmployeeScale.length ? clickEmployeeScale : [],
         lossReason: initialFilter.lossReason ? [initialFilter.lossReason] : [],
         salesRep: clickSalesRep.length ? clickSalesRep : (df.salesRep || []),
@@ -136,6 +138,7 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
       if (filters.industry.length && !filters.industry.includes(p.industry)) return false
       if (filters.status.length && !filters.status.includes(p.status)) return false
       if (filters.relationship.length && !filters.relationship.includes(p.relationship)) return false
+      if (filters.excludeRelationship?.length && (!p.relationship || filters.excludeRelationship.includes(p.relationship))) return false
       if (filters.priority === 'true' && !p.priorityFlag) return false
       if (filters.priority === 'false' && p.priorityFlag) return false
       if (filters.month.length && (!p.initialDate || !filters.month.some(m => p.initialDate.startsWith(m)))) return false

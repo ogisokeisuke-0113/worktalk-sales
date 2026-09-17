@@ -1996,7 +1996,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             <KpiCard label="テレアポ獲得数" value={stats.teleapoAppoCount} suffix="件" color="blue" small sub="架電→アポ獲得"
               onClick={() => onNavigateTeleapo?.({ callResult: ['アポ獲得'], callDateFrom: dateFrom || '', callDateTo: dateTo || '', _teleapoRepFilter: selectedRep })} />
             <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル"
-              onClick={() => navigateWithFilters({ relationship: NON_TELEAPO_RELATIONSHIPS })} />
+              onClick={() => navigateWithFilters({ excludeRelationship: ['新規', '再提案'] })} />
             <KpiCard label="再提案アポ数" value={stats.reProposalAppoCount} suffix="件" color="green" small
               sub={[stats.reProposalStatus.inProgress > 0 && `進行中${stats.reProposalStatus.inProgress}`, stats.reProposalStatus.won > 0 && `受注${stats.reProposalStatus.won}`, stats.reProposalStatus.lost > 0 && `失注${stats.reProposalStatus.lost}`].filter(Boolean).join('・') || '受注/失注済み企業への再提案'}
               onClick={() => onNavigate?.({ relationship: ['再提案'], _dashboardFilters: { salesRep: selectedRep, industry: selectedIndustry, relationship: [], dateFrom: dateFrom || '', dateTo: dateTo || '', decisionMaker: decisionMakerFilter } })} />
