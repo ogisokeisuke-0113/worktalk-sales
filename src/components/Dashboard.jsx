@@ -5,7 +5,9 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   ComposedChart, Line,
 } from 'recharts'
-import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES, CONNECTED_RESULTS } from '../constants'
+import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES, CONNECTED_RESULTS, RELATIONSHIPS } from '../constants'
+
+const NON_TELEAPO_RELATIONSHIPS = RELATIONSHIPS.filter(r => r !== '新規')
 
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
@@ -1985,9 +1987,12 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             <span className="text-sm text-slate-400">件</span>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <KpiCard label="テレアポ獲得数" value={stats.teleapoAppoCount} suffix="件" color="blue" small sub="架電→アポ獲得" />
-            <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル" />
-            <KpiCard label="既存顧客アポ数" value={stats.meetingCount} suffix="件" small sub="追加提案商談記録" />
+            <KpiCard label="テレアポ獲得数" value={stats.teleapoAppoCount} suffix="件" color="blue" small sub="架電→アポ獲得"
+              onClick={() => navigateTeleapoWithFilters({ callResult: ['アポ獲得'], callDateFrom: dateFrom || '', callDateTo: dateTo || '' })} />
+            <KpiCard label="その他獲得数" value={stats.otherAppoCount} suffix="件" color="purple" small sub="テレアポ以外のチャネル"
+              onClick={() => navigateWithFilters({ relationship: NON_TELEAPO_RELATIONSHIPS })} />
+            <KpiCard label="既存顧客アポ数" value={stats.meetingCount} suffix="件" small sub="追加提案商談記録"
+              onClick={() => navigateWithFilters({})} />
           </div>
         </div>
 

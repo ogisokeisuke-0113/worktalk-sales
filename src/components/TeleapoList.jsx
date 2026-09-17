@@ -1914,7 +1914,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
         callDateFrom: initialFilter.callDateFrom || '',
         callDateTo: initialFilter.callDateTo || '',
         emailStatus: '',
-        callResult: [],
+        callResult: toArr(initialFilter.callResult),
         listSource: [],
         nextCallDateUntil: '',
         keepHasHistory: '',

@@ -67,7 +67,9 @@ export default function ProposalList({ proposals, setProposals, apiKey, initialF
 
       // クリック先のフィルター + ダッシュボードの絞り込み状態をマージ
       const clickIndustry = initialFilter.industry ? [initialFilter.industry] : []
-      const clickRelationship = initialFilter.relationship ? [initialFilter.relationship] : []
+      const clickRelationship = initialFilter.relationship
+        ? (Array.isArray(initialFilter.relationship) ? initialFilter.relationship : [initialFilter.relationship])
+        : []
       const clickEmployeeScale = initialFilter.employeeScale ? [initialFilter.employeeScale] : []
       const clickSalesRep = initialFilter.salesRep ? [initialFilter.salesRep] : []
 
