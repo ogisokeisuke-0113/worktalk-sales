@@ -58,6 +58,19 @@ jobs:
           fi
           echo "接続先OK: $EXPECTED"
 
+      # ── 回帰テスト ──────────────────────────────────────────
+      # 2026-09-17 に、架電結果の絞り込みを別の改修で書き直した際、
+      # 「未架電（履歴なし）」の条件が黙って無効化され全件表示になった。
+      # Git は両方を正しい変更として受け入れるため衝突も警告も出ない。
+      # 機械が毎回確かめる以外に防ぐ方法が無いので、ここで配信前に止める。
+      # 通信はすべて偽物に差し替えたうえ、*.supabase.co は解決不能にしてあるので
+      # 本番DBには一切触れない。
+      - name: ブラウザを用意
+        run: npx playwright install --with-deps chromium
+
+      - name: 回帰テスト
+        run: npm run test:e2e
+
       - name: gh-pages へ配信
         run: |
           git config user.name  "github-actions[bot]"

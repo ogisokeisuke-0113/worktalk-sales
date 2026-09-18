@@ -9,6 +9,13 @@ import { FUNNEL_COLORS, EMPLOYEE_SCALES, PROPOSAL_SERVICES, CONNECTED_RESULTS, R
 
 const NON_TELEAPO_RELATIONSHIPS = RELATIONSHIPS.filter(r => r !== '新規' && r !== '再提案')
 
+/* テレアポのダッシュボードは「テレアポで取れたアポ」だけを数える。
+   ステータスだけ手でアポ確定にした企業（架電記録にアポ獲得が無いもの）は含めない。
+   ※提案リスト側の p.status === 'アポ確定' は商談の進捗ステージなので別物。 */
+const teleapoWonCall = item =>
+  (item?.callHistory || []).find(c => c && c.result === 'アポ獲得') || null
+const hasTeleapoAppo = item => !!teleapoWonCall(item)
+
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
 const HEATMAP_KEYS = {
@@ -597,7 +604,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const called = teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).length
     const uncalled = total - called
     const appoConfirmed = teleapoFiltered.filter(i => {
-      if (i.status !== 'アポ確定') return false
+      if (!hasTeleapoAppo(i)) return false
       if (!teleapoDateFrom && !teleapoDateTo) return true
       const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return false  // アポ日不明は期間外として除外
@@ -627,7 +634,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   // 日付フィルター済みアポ確定リスト（アポ獲得日が期間内）
   const teleapoAppoFiltered = useMemo(() => {
     return teleapoFiltered.filter(i => {
-      if (i.status !== 'アポ確定') return false
+      if (!hasTeleapoAppo(i)) return false
       if (!teleapoDateFrom && !teleapoDateTo) return true
       const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return false
@@ -654,7 +661,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   const teleapoAppoByMonth = useMemo(() => {
     const map = {}
     // 担当フィルターは適用、日付フィルターは適用しない（月別トレンドを全期間で表示）
-    const base = teleapoFiltered.filter(i => i.status === 'アポ確定')
+    const base = teleapoFiltered.filter(hasTeleapoAppo)
     base.forEach(item => {
       const appoDate = item.appoDate || (item.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return
@@ -782,8 +789,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         map[key].keeps++
       })
       // アポ確定数：callerベース（自分が架電した企業がアポ確定になった数）で集計
-      if (item.status === 'アポ確定') {
-        const appoDate = item.appoDate || (item.callHistory || []).find(c => c.result === 'アポ獲得')?.date
+      if (hasTeleapoAppo(item)) {
+        const appoDate = item.appoDate || teleapoWonCall(item)?.date
         if (teleapoDateFrom || teleapoDateTo) {
           if (appoDate) {
             const day = appoDate.slice(0, 10)
@@ -1030,10 +1037,10 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const withMail = teleapoFiltered.filter(i => ['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
     const withoutMail = teleapoFiltered.filter(i => !['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
     return [
-      { name: 'メール送信あり', companies: withMail.length, appo: withMail.filter(i => i.status === 'アポ確定').length,
-        appoRate: withMail.length > 0 ? Number(((withMail.filter(i => i.status === 'アポ確定').length / withMail.length) * 100).toFixed(1)) : 0 },
-      { name: 'メール送信なし', companies: withoutMail.length, appo: withoutMail.filter(i => i.status === 'アポ確定').length,
-        appoRate: withoutMail.length > 0 ? Number(((withoutMail.filter(i => i.status === 'アポ確定').length / withoutMail.length) * 100).toFixed(1)) : 0 },
+      { name: 'メール送信あり', companies: withMail.length, appo: withMail.filter(i => hasTeleapoAppo(i)).length,
+        appoRate: withMail.length > 0 ? Number(((withMail.filter(i => hasTeleapoAppo(i)).length / withMail.length) * 100).toFixed(1)) : 0 },
+      { name: 'メール送信なし', companies: withoutMail.length, appo: withoutMail.filter(i => hasTeleapoAppo(i)).length,
+        appoRate: withoutMail.length > 0 ? Number(((withoutMail.filter(i => hasTeleapoAppo(i)).length / withoutMail.length) * 100).toFixed(1)) : 0 },
     ]
   }, [teleapoFiltered])
 
@@ -1052,7 +1059,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       const firstCallDate = new Date(item.callHistory[0].date)
       const lagDays = Math.max(0, Math.floor((firstCallDate - sentDate) / (1000 * 60 * 60 * 24)))
       const bucket = buckets.find(b => lagDays >= b.min && lagDays <= b.max)
-      if (bucket) { bucket.companies++; if (item.status === 'アポ確定') bucket.appo++ }
+      if (bucket) { bucket.companies++; if (hasTeleapoAppo(item)) bucket.appo++ }
     })
     return buckets.filter(b => b.companies > 0).map(b => ({ ...b, appoRate: Number(((b.appo / b.companies) * 100).toFixed(1)) }))
   }, [teleapoFiltered])
@@ -1062,10 +1069,10 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const withMail = emailFiltered.filter(i => ['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
     const withoutMail = emailFiltered.filter(i => !['送信済み', '開封済み', 'クリック済み'].includes(i.emailStatus))
     return [
-      { name: 'メール送信あり', companies: withMail.length, appo: withMail.filter(i => i.status === 'アポ確定').length,
-        appoRate: withMail.length > 0 ? Number(((withMail.filter(i => i.status === 'アポ確定').length / withMail.length) * 100).toFixed(1)) : 0 },
-      { name: 'メール送信なし', companies: withoutMail.length, appo: withoutMail.filter(i => i.status === 'アポ確定').length,
-        appoRate: withoutMail.length > 0 ? Number(((withoutMail.filter(i => i.status === 'アポ確定').length / withoutMail.length) * 100).toFixed(1)) : 0 },
+      { name: 'メール送信あり', companies: withMail.length, appo: withMail.filter(i => hasTeleapoAppo(i)).length,
+        appoRate: withMail.length > 0 ? Number(((withMail.filter(i => hasTeleapoAppo(i)).length / withMail.length) * 100).toFixed(1)) : 0 },
+      { name: 'メール送信なし', companies: withoutMail.length, appo: withoutMail.filter(i => hasTeleapoAppo(i)).length,
+        appoRate: withoutMail.length > 0 ? Number(((withoutMail.filter(i => hasTeleapoAppo(i)).length / withoutMail.length) * 100).toFixed(1)) : 0 },
     ]
   }, [emailFiltered])
 
@@ -1084,7 +1091,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       const firstCallDate = new Date(item.callHistory[0].date)
       const lagDays = Math.max(0, Math.floor((firstCallDate - sentDate) / (1000 * 60 * 60 * 24)))
       const bucket = buckets.find(b => lagDays >= b.min && lagDays <= b.max)
-      if (bucket) { bucket.companies++; if (item.status === 'アポ確定') bucket.appo++ }
+      if (bucket) { bucket.companies++; if (hasTeleapoAppo(item)) bucket.appo++ }
     })
     return buckets.filter(b => b.companies > 0).map(b => ({ ...b, appoRate: Number(((b.appo / b.companies) * 100).toFixed(1)) }))
   }, [emailFiltered])
@@ -1099,7 +1106,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     return groups.map(g => {
       const called = g.items.filter(i => (i.callHistory || []).length > 0)
       const connected = called.filter(i => (i.callHistory || []).some(c => CONNECTED_RESULTS.has(c.result)))
-      const appo = g.items.filter(i => i.status === 'アポ確定')
+      const appo = g.items.filter(i => hasTeleapoAppo(i))
       return {
         name: g.label,
         total: g.items.length,
@@ -1152,7 +1159,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       const bucket = buckets.find(b => n >= b.min && n <= b.max)
       if (bucket) {
         bucket.companies++
-        if (item.status === 'アポ確定') bucket.appo++
+        if (hasTeleapoAppo(item)) bucket.appo++
       }
     })
     return buckets.filter(b => b.companies > 0).map(b => ({
