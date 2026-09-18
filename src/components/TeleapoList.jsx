@@ -5,6 +5,7 @@ import { PREFECTURES, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLO
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
+import { prefectureFromPhone } from '../lib/areaCode'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]'
 
@@ -155,7 +156,16 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
     keepHistory: [],
   })
 
-  const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
+  /* 電話番号を入れたら都道府県を自動で埋める。すでに入っている場合は触らない。
+     市外局番が複数県にまたがる場合（06 大阪/兵庫 など）は推測しない。 */
+  const set = (key, value) => setForm(prev => {
+    const next = { ...prev, [key]: value }
+    if ((key === 'phone' || key === 'recruitmentPhone') && !String(prev.prefecture || '').trim()) {
+      const guessed = prefectureFromPhone(next.phone, next.recruitmentPhone)
+      if (guessed) next.prefecture = guessed
+    }
+    return next
+  })
 
   const handleSubmit = (e) => {
     e.preventDefault()
