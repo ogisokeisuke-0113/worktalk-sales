@@ -90,4 +90,21 @@ async function recordFromList(page, name, result) {
   await close()
 }
 
+/* ⑤ 詳細パネルの「アポ確定」ボタンは廃止した。
+   架電記録を残さず昇格させると、テレアポの実績として数えられない企業ができてしまうため。 */
+{
+  const items = [base('g', 'G_詳細確認', '架電済', oneCall)]
+  const { page, errs, close } = await open('dist', items)
+  await page.getByRole('button', { name: '検索する' }).first().click()
+  await page.waitForTimeout(900)
+  await page.locator('div.bg-white.rounded-xl.border').filter({ hasText: 'G_詳細確認' }).first()
+    .getByRole('button', { name: '詳細' }).click()
+  await page.waitForTimeout(700)
+  const panel = page.locator('div.fixed.inset-0')
+  const n = await panel.getByRole('button', { name: 'アポ確定', exact: true }).count()
+  check('詳細パネルにアポ確定ボタンが無い', n === 0, `${n}個`)
+  allErrs.push(...errs)
+  await close()
+}
+
 done(allErrs)

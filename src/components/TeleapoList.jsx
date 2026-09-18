@@ -294,7 +294,9 @@ const CALL_CONTENTS = ['worktalk', '人材紹介', 'その他']
 
 /* ───────────────────── 架電記録サイドパネル ───────────────────── */
 function CallRecordModal({ onSave, onClose }) {
+  const today = new Date().toISOString().slice(0, 10)
   const [form, setForm] = useState({
+    callDate: today,
     callContent: '',
     callType: '',
     result: '',
@@ -306,7 +308,13 @@ function CallRecordModal({ onSave, onClose }) {
 
   const handleSave = () => {
     if (!form.result) return
-    onSave({ ...form, date: new Date().toISOString() })
+    const { callDate, ...rest } = form
+    // 今日ならこれまでどおり現在時刻。過去日なら正午に置く。
+    // 0時だと時差で前日に転びうるため、日付のズレが起きない正午にする。
+    const date = (!callDate || callDate === today)
+      ? new Date().toISOString()
+      : new Date(`${callDate}T12:00:00`).toISOString()
+    onSave({ ...rest, date })
   }
 
   return (
@@ -320,6 +328,12 @@ function CallRecordModal({ onSave, onClose }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">架電日</label>
+            {/* 記録し忘れた分を後から入れられるように。既定は今日なので普段は触らなくてよい。 */}
+            <input type="date" value={form.callDate} max={today}
+              onChange={e => set('callDate', e.target.value)} className={INPUT} />
+          </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">架電内容</label>
             <select value={form.callContent} onChange={e => set('callContent', e.target.value)} className={INPUT}>
@@ -471,10 +485,6 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
             <button onClick={() => onEdit(item)}
               className="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">
               編集
-            </button>
-            <button onClick={() => onPromote(item)}
-              className="px-3 py-1.5 text-xs font-medium rounded-md bg-[#0f766e] text-white hover:bg-[#0a5c56]">
-              アポ確定
             </button>
             <button onClick={() => { if (confirm('削除しますか？')) onDelete(item.id) }}
               className="px-3 py-1.5 text-xs font-medium rounded-md text-[#be123c] border border-rose-200 hover:bg-rose-50 ml-auto">

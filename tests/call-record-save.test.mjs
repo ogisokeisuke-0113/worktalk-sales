@@ -42,5 +42,32 @@ check('記録者が入る', row ? (row.callHistory || []).slice(-1)[0]?.caller =
 check('担当営業は書き換えない', row ? row.salesRep === '美藤 陸' : false, row ? String(row.salesRep) : '')
 check('call_logs にも残る', logs.length > 0, `${logs.length}件`)
 
+const today = new Date().toISOString().slice(0, 10)
+const lastEntry = row ? (row.callHistory || []).slice(-1)[0] : null
+check('既定は今日の日付で記録される', String(lastEntry?.date || '').slice(0, 10) === today,
+  String(lastEntry?.date || '').slice(0, 10))
+
+// 記録し忘れた分を過去日で入れられること
+const back = '2026-09-02'
+const card2 = page.locator('div.bg-white.rounded-xl.border').filter({ hasText: 'A_未架電' }).first()
+await card2.getByRole('button', { name: '架電を記録' }).click()
+await page.waitForTimeout(600)
+// 画面には絞り込み用の日付欄もあるので、記録パネル内の「架電日」に絞る
+const dateField = page.locator('div.fixed').locator('div')
+  .filter({ has: page.locator('label', { hasText: '架電日' }) }).last().locator('input[type=date]')
+await dateField.first().fill(back)
+await page.waitForTimeout(200)
+await page.locator('select').filter({ has: page.locator('option', { hasText: '担当者不在' }) })
+  .first().selectOption('担当者不在')
+await page.waitForTimeout(200)
+await page.getByRole('button', { name: /保存|記録する/ }).last().click()
+await page.waitForTimeout(3000)
+const rowA = writes.filter(w => w.table === 'teleapo_items')
+  .flatMap(w => Array.isArray(w.body) ? w.body : [w.body]).filter(Boolean)
+  .map(x => x.data || x).filter(d => d && d.companyName === 'A_未架電').pop()
+const backEntry = rowA ? (rowA.callHistory || []).slice(-1)[0] : null
+check('過去日でも記録できる', String(backEntry?.date || '').slice(0, 10) === back,
+  String(backEntry?.date || '').slice(0, 10))
+
 done(errs)
 await close()
