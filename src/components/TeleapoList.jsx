@@ -1529,6 +1529,13 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                   {item.employeeScale && (
                     <p className="text-sm font-semibold text-slate-500 mt-0.5">{item.employeeScale}</p>
                   )}
+                  {/* エリアは他の行に埋もれて見落とされるので、担当者と同じ形で見出しを付ける */}
+                  {item.prefecture && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-bold">エリア</span>
+                      <span className="text-sm font-semibold text-slate-700">{item.prefecture}</span>
+                    </div>
+                  )}
                   {item.contactName && (
                     <div className="mt-2 flex items-center gap-1.5">
                       <span className="text-[10px] text-slate-400 font-bold">担当者</span>
@@ -1536,7 +1543,6 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                     </div>
                   )}
                   <div className="mt-2 space-y-1 text-sm text-slate-500">
-                    {item.prefecture && <p>{item.prefecture}</p>}
                     {keepActive && item.keptBy
                       ? <p>Keep: {item.keptBy}</p>
                       : inCharge && <p>{inCharge.label}: {inCharge.name}</p>

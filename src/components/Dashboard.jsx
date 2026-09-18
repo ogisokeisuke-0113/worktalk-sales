@@ -1312,8 +1312,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                 sub={`消化率 ${teleapoStats.digestRate}%`} />
               <KpiCard label="接続率" value={teleapoStats.connectionRate} suffix="%" color="green"
                 sub="担当者と話せた件数÷総架電数" />
-              <KpiCard label="アポ確定" value={teleapoStats.appoConfirmed} suffix="社" color="purple"
-                sub={`確定率 ${teleapoStats.appoRate}%（架電済比）`}
+              <KpiCard label="アポ獲得" value={teleapoStats.appoConfirmed} suffix="社" color="purple"
+                sub={`獲得率 ${teleapoStats.appoRate}%（架電済比）`}
                 onClick={() => navigateTeleapoWithFilters({ status: ['アポ確定'] })} />
             </div>
             <div className="grid grid-cols-4 gap-4 mb-5">
@@ -1419,8 +1419,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                           <th className="px-2 py-2 text-right font-medium text-slate-500">架電数</th>
                           <th className="px-2 py-2 text-right font-medium text-slate-500">接続率</th>
                           <th className="px-2 py-2 text-right font-medium text-slate-500">平均架電回数</th>
-                          <th className="px-2 py-2 text-right font-medium text-slate-500">アポ確定</th>
-                          <th className="px-2 py-2 text-right font-medium text-slate-500">確定率</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">アポ獲得</th>
+                          <th className="px-2 py-2 text-right font-medium text-slate-500">獲得率</th>
                           <th className="px-2 py-2 text-right font-medium text-slate-500">Keep数</th>
                         </tr>
                       </thead>
@@ -1471,7 +1471,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                 const maxRate = Math.max(niceMax(data, 'appoRate'), niceMax(data, 'connectionRate'))
                 const ticks = Array.from({ length: maxRate / 10 + 1 }, (_, i) => i * 10)
                 return (
-                  <ChartCard title="業種別 アポ確定率 / 接続率" sub="母数：架電済み企業">
+                  <ChartCard title="業種別 アポ獲得率 / 接続率" sub="母数：架電済み企業">
                     <ResponsiveContainer width="100%" height={chartH}>
                       <BarChart data={data} layout="vertical" margin={{ left: 0, right: 50 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1481,7 +1481,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
                           formatter={(val, name) => [`${val}%`, name]} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
-                        <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={10}
+                        <Bar dataKey="appoRate" name="アポ獲得率" fill="#0f766e" barSize={10}
                           label={{ position: 'right', fontSize: 10, fill: '#64748b', formatter: v => `${v}%` }}
                           shape={(props) => <ClickableBar {...props} fill="#0f766e" onClick={() => navigateTeleapoWithFilters({ industry: props.payload?.name })} />} />
                         <Bar dataKey="connectionRate" name="接続率" fill="#4a82ae" barSize={10}
@@ -1497,7 +1497,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                 const maxRate = Math.max(niceMax(data, 'appoRate'), niceMax(data, 'connectionRate'))
                 const ticks = Array.from({ length: maxRate / 10 + 1 }, (_, i) => i * 10)
                 return (
-                  <ChartCard title="従業員規模別 アポ確定率 / 接続率" sub="母数：架電済み企業">
+                  <ChartCard title="従業員規模別 アポ獲得率 / 接続率" sub="母数：架電済み企業">
                     <ResponsiveContainer width="100%" height={260}>
                       <BarChart data={data} margin={{ right: 10, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1506,7 +1506,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
                           formatter={(val, name) => [`${val}%`, name]} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
-                        <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={14}
+                        <Bar dataKey="appoRate" name="アポ獲得率" fill="#0f766e" barSize={14}
                           shape={(props) => <ClickableBar {...props} fill="#0f766e" onClick={() => navigateTeleapoWithFilters({ employeeScale: props.payload?.name })} />} />
                         <Bar dataKey="connectionRate" name="接続率" fill="#4a82ae" barSize={14}
                           shape={(props) => <ClickableBar {...props} fill="#4a82ae" onClick={() => navigateTeleapoWithFilters({ employeeScale: props.payload?.name })} />} />
@@ -1553,7 +1553,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               }
 
               return (
-                <ChartCard title="業種 × 従業員規模 クロス集計" sub="母数：架電済み企業 ｜ 通電率＝担当者と話せた件数÷架電数 ｜ 確定率＝アポ確定社数÷架電社数">
+                <ChartCard title="業種 × 従業員規模 クロス集計" sub="母数：架電済み企業 ｜ 通電率＝担当者と話せた件数÷架電数 ｜ 獲得率＝アポ獲得社数÷架電社数">
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse">
                       <thead>
@@ -1653,7 +1653,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
               </div>
             )}
             {teleapoByCallCount.length > 0 && (
-              <ChartCard title="架電回数別 アポ確定率" sub="N回架電した企業のうちアポ確定になった割合" className="mb-4">
+              <ChartCard title="架電回数別 アポ獲得率" sub="N回架電した企業のうちアポ獲得になった割合" className="mb-4">
                 <ResponsiveContainer width="100%" height={220}>
                   <ComposedChart data={teleapoByCallCount}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1661,9 +1661,9 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                     <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
                     <YAxis yAxisId="right" orientation="right" domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
                     <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                      formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, '架電社数']} />
+                      formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ獲得率'] : [`${v}社`, '架電社数']} />
                     <Bar yAxisId="left" dataKey="companies" name="架電社数" fill="#b8cfe0" barSize={30} radius={[2, 2, 0, 0]} />
-                    <Line yAxisId="right" type="monotone" dataKey="appoRate" name="アポ確定率" stroke="#c97a1a" strokeWidth={2.5} dot={{ r: 5, fill: '#c97a1a' }}
+                    <Line yAxisId="right" type="monotone" dataKey="appoRate" name="アポ獲得率" stroke="#c97a1a" strokeWidth={2.5} dot={{ r: 5, fill: '#c97a1a' }}
                       label={{ position: 'top', fontSize: 11, fill: '#c97a1a', formatter: v => v > 0 ? `${v}%` : '' }} />
                   </ComposedChart>
                 </ResponsiveContainer>
@@ -1673,15 +1673,15 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
             {/* ── メール × 架電 相関（テレアポタブ内サマリ） ── */}
             {emailAppoCorr.some(d => d.companies > 0) && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                <ChartCard title="メール送信有無別 アポ確定率" sub="メール→架電の効果検証">
+                <ChartCard title="メール送信有無別 アポ獲得率" sub="メール→架電の効果検証">
                   <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={emailAppoCorr} margin={{ top: 10, right: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                       <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
                       <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                        formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
-                      <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={50} radius={[4,4,0,0]}
+                        formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ獲得率'] : [`${v}社`, n]} />
+                      <Bar dataKey="appoRate" name="アポ獲得率" fill="#0f766e" barSize={50} radius={[4,4,0,0]}
                         label={{ position: 'top', fontSize: 13, fill: '#0f766e', formatter: v => `${v}%` }} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -1691,15 +1691,15 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                 </ChartCard>
 
                 {emailLagAppo.length > 0 && (
-                  <ChartCard title="送信〜架電 経過日数別 アポ確定率" sub="最適な架電タイミング検証">
+                  <ChartCard title="送信〜架電 経過日数別 アポ獲得率" sub="最適な架電タイミング検証">
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={emailLagAppo} margin={{ top: 10, right: 10, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
                         <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
                         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
-                        <Bar dataKey="appoRate" name="アポ確定率" fill="#7c3aed" barSize={30} radius={[4,4,0,0]}
+                          formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ獲得率'] : [`${v}社`, n]} />
+                        <Bar dataKey="appoRate" name="アポ獲得率" fill="#7c3aed" barSize={30} radius={[4,4,0,0]}
                           label={{ position: 'top', fontSize: 11, fill: '#7c3aed', formatter: v => `${v}%` }} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -1911,15 +1911,15 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                 <p className="text-xs font-semibold text-slate-600 mb-3 uppercase tracking-wide">メール → 架電 相関分析</p>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                   {/* メールあり/なし別 */}
-                  <ChartCard title="メール送信有無別 アポ確定率" sub="架電済み企業ベース">
+                  <ChartCard title="メール送信有無別 アポ獲得率" sub="架電済み企業ベース">
                     <ResponsiveContainer width="100%" height={200}>
                       <BarChart data={emailAppoCorrF} margin={{ top: 10, right: 20 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                         <XAxis dataKey="name" tick={{ fontSize: 10 }} />
                         <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
                         <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                          formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
-                        <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={40} radius={[4,4,0,0]}
+                          formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ獲得率'] : [`${v}社`, n]} />
+                        <Bar dataKey="appoRate" name="アポ獲得率" fill="#0f766e" barSize={40} radius={[4,4,0,0]}
                           label={{ position: 'top', fontSize: 12, fill: '#0f766e', formatter: v => `${v}%` }} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -1929,7 +1929,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                   </ChartCard>
 
                   {/* 経過日数別 */}
-                  <ChartCard title="送信〜架電 経過日数別 アポ確定率" sub="emailSentAt と初回架電日の差">
+                  <ChartCard title="送信〜架電 経過日数別 アポ獲得率" sub="emailSentAt と初回架電日の差">
                     {emailLagAppoF.length === 0 ? (
                       <p className="text-sm text-slate-400 py-8 text-center">データなし<br/><span className="text-xs">（メール送信後に架電した企業が必要）</span></p>
                     ) : (
@@ -1939,8 +1939,8 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                           <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={50} />
                           <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} />
                           <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }}
-                            formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ確定率'] : [`${v}社`, n]} />
-                          <Bar dataKey="appoRate" name="アポ確定率" fill="#7c3aed" barSize={28} radius={[4,4,0,0]}
+                            formatter={(v, n) => n === 'appoRate' ? [`${v}%`, 'アポ獲得率'] : [`${v}社`, n]} />
+                          <Bar dataKey="appoRate" name="アポ獲得率" fill="#7c3aed" barSize={28} radius={[4,4,0,0]}
                             label={{ position: 'top', fontSize: 11, fill: '#7c3aed', formatter: v => `${v}%` }} />
                         </BarChart>
                       </ResponsiveContainer>
@@ -1948,7 +1948,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                   </ChartCard>
 
                   {/* 開封状態別 */}
-                  <ChartCard title="開封状態別 接続率 / アポ確定率" sub="SendGrid連携後に自動更新">
+                  <ChartCard title="開封状態別 接続率 / アポ獲得率" sub="SendGrid連携後に自動更新">
                     {emailOpenAppoCorr.length === 0 ? (
                       <p className="text-sm text-slate-400 py-8 text-center">データなし</p>
                     ) : (
@@ -1961,7 +1961,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
                             formatter={(v, n) => [`${v}%`, n]} />
                           <Legend wrapperStyle={{ fontSize: 10 }} />
                           <Bar dataKey="connectionRate" name="接続率" fill="#4a82ae" barSize={14} />
-                          <Bar dataKey="appoRate" name="アポ確定率" fill="#0f766e" barSize={14} />
+                          <Bar dataKey="appoRate" name="アポ獲得率" fill="#0f766e" barSize={14} />
                         </BarChart>
                       </ResponsiveContainer>
                     )}

@@ -25,5 +25,16 @@ await page.waitForTimeout(700)
 const got = await listedCompanies(page)
 check('大阪府で絞れる', JSON.stringify(got) === JSON.stringify(['B_大阪', 'C_大阪2']), JSON.stringify(got))
 
+// 企業カードにエリアが出ること
+const areaShown = await page.evaluate(() => {
+  const cards = [...document.querySelectorAll('div.bg-white.rounded-xl.border')]
+  const card = cards.find(el => (el.textContent || '').includes('B_大阪'))
+  if (!card) return null
+  const labels = [...card.querySelectorAll('span')].map(s => s.textContent.trim())
+  const i = labels.indexOf('エリア')
+  return i >= 0 ? labels[i + 1] : null
+})
+check('企業カードにエリアが出る', areaShown === '大阪府', String(areaShown))
+
 done(errs)
 await close()

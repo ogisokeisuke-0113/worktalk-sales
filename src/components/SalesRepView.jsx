@@ -440,12 +440,12 @@ export default function SalesRepView({ proposals, users = [], teleapoItems = [],
                   <p className="text-[10px] text-slate-400">{teleapoStats.connectedCalls}件接続</p>
                 </div>
                 <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 text-center">
-                  <p className="text-[10px] text-[#0f766e] font-medium mb-1">アポ確定数</p>
+                  <p className="text-[10px] text-[#0f766e] font-medium mb-1">アポ獲得数</p>
                   <p className="text-2xl font-bold text-[#0f766e]">{teleapoStats.appoCount}</p>
                   <p className="text-[10px] text-slate-400">社</p>
                 </div>
                 <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 text-center">
-                  <p className="text-[10px] text-[#0f766e] font-medium mb-1">確定率</p>
+                  <p className="text-[10px] text-[#0f766e] font-medium mb-1">獲得率</p>
                   <p className="text-2xl font-bold text-[#0f766e]">{teleapoStats.appoRate}%</p>
                   <p className="text-[10px] text-slate-400">架電数比</p>
                 </div>
@@ -456,7 +456,7 @@ export default function SalesRepView({ proposals, users = [], teleapoItems = [],
                 const steps = [
                   { label: '架電社数', count: teleapoStats.totalCompanies, color: '#4a82ae' },
                   { label: '通電社数', count: teleapoStats.connectedCompanies, color: '#2d6a9e' },
-                  { label: 'アポ確定(テレ)', count: teleapoStats.appoCount, color: '#0f766e' },
+                  { label: 'アポ獲得(テレ)', count: teleapoStats.appoCount, color: '#0f766e' },
                   { label: '提案数', count: teleapoStats.repProposalCount, color: '#b45309' },
                   { label: '受注数', count: teleapoStats.repWonCount, color: '#be123c' },
                 ]
@@ -506,8 +506,8 @@ export default function SalesRepView({ proposals, users = [], teleapoItems = [],
                           <tr className="border-b border-slate-200">
                             <th className="py-2 text-left text-slate-500 font-medium">業種</th>
                             <th className="py-2 text-right text-slate-500 font-medium">架電社数</th>
-                            <th className="py-2 text-right text-slate-500 font-medium">アポ確定</th>
-                            <th className="py-2 text-right text-slate-500 font-medium">確定率</th>
+                            <th className="py-2 text-right text-slate-500 font-medium">アポ獲得</th>
+                            <th className="py-2 text-right text-slate-500 font-medium">獲得率</th>
                           </tr>
                         </thead>
                         <tbody>
