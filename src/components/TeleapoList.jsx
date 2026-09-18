@@ -77,6 +77,32 @@ function calcPriorityScore(item, downloadLeads = []) {
 const PRIORITY_LABELS = ['', '低', '中', '高', '最高']
 const PRIORITY_COLORS = ['', 'bg-slate-100 text-slate-400', 'bg-sky-50 text-[#4a82ae]', 'bg-amber-50 text-amber-700', 'bg-rose-50 text-rose-700']
 
+/* 「直近架電」として見せる1件を選ぶ。
+   取り込み時に作られた中身の無い記録（結果もメモも空）が配列の末尾に入っていることがあり、
+   単純に最後の要素を取ると、中身のある最新の記録が隠れてしまう。
+   優先順位は 中身のある記録 → 中身の無い記録 → 記録なし。
+   同じ区分の中では日時が新しいものを選び、日時が無いものは最後に回す。 */
+export function latestCall(history) {
+  const list = (history || []).filter(Boolean)
+  if (!list.length) return null
+  const hasContent = c => !!(String(c.result || '').trim() || String(c.note || '').trim())
+  const pool = list.some(hasContent) ? list.filter(hasContent) : list
+  const dated = pool.filter(c => String(c.date || '').trim())
+  if (!dated.length) return pool[pool.length - 1]
+  return dated.reduce((a, b) => (String(b.date) > String(a.date) ? b : a))
+}
+
+/* 架電履歴を新しい順に並べる。日時が無いものは末尾へ。 */
+export function sortCallsNewestFirst(history) {
+  return [...(history || []).filter(Boolean)].sort((a, b) => {
+    const ad = String(a.date || ''), bd = String(b.date || '')
+    if (ad && bd) return bd.localeCompare(ad)
+    if (ad) return -1
+    if (bd) return 1
+    return 0
+  })
+}
+
 /* 「担当営業」という固定の割当は廃止し、架電記録から担当者を導く。
    ・アポ確定  → 「アポ獲得」を記録した人（＝担当確定）
    ・それ以外  → 最後に架電した人（＝最終架電者）。架電記録が無ければ表示しない
@@ -592,7 +618,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
               <p className="text-sm text-slate-400 py-4 text-center">まだ架電記録がありません</p>
             ) : (
               <div className="space-y-2">
-                {[...(item.callHistory || [])].reverse().map((c, i) => (
+                {sortCallsNewestFirst(item.callHistory).map((c, i) => (
                   <div key={c.id || i} className="border border-slate-200 rounded-lg px-3 py-2">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-medium text-slate-500">
@@ -1059,8 +1085,8 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
     }
     if (sortKey === 'lastCall') {
       return [...filtered].sort((a, b) => {
-        const aLast = (a.callHistory || []).length > 0 ? (a.callHistory[a.callHistory.length - 1].date || '') : ''
-        const bLast = (b.callHistory || []).length > 0 ? (b.callHistory[b.callHistory.length - 1].date || '') : ''
+        const aLast = latestCall(a.callHistory)?.date || ''
+        const bLast = latestCall(b.callHistory)?.date || ''
         if (!aLast && !bLast) return 0
         if (!aLast) return 1
         if (!bLast) return -1
@@ -1455,7 +1481,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
           </div>
         ) : sortedFiltered.slice(0, visibleCount).map(item => {
           const history = item.callHistory || []
-          const lastCall = history.length > 0 ? history[history.length - 1] : null
+          const lastCall = latestCall(history)
           const priority = calcPriorityScore(item, downloadLeads)
           const keepActive = isKeepActive(item)
           const isOtherKeep = keepActive && item.keptBy && item.keptBy !== currentUser?.name
