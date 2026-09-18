@@ -995,7 +995,7 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 }
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
-function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, callerOptions = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
+function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, callerOptions = [], allPrefectures = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
   bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), onToggleBookmark }) {
   // 一度に描画する件数。9,647件を全部描くと DOM が28万ノードになり、
   // 表示に6秒かかってスクロールも重くなる。必要な分だけ描いて継ぎ足す。
@@ -1320,6 +1320,12 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <label className="block text-xs font-medium text-slate-500 mb-1">従業員規模</label>
                 <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="すべて" fullWidth />
               </div>
+              {allPrefectures.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">都道府県</label>
+                  <MultiSelect selected={filters.prefecture || []} onChange={v => setFilter('prefecture', v)} options={allPrefectures} placeholder="すべて" fullWidth />
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Keep状態</label>
                 <select value={filters.kept} onChange={e => setFilter('kept', e.target.value)}
@@ -2033,7 +2039,10 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           // 「未架電」条件：日付フィルターなし かつ 履歴が0件
           const hitNone = wantNone && !hasDateFilter && history.length === 0
           // 通常の結果条件：エントリが日付条件（あれば）AND 結果条件（あれば）を同時に満たすか
-          const hitEntry = history.some(c => {
+          // 日付も結果も指定が無ければ、この条件では何も絞らない（＝成立させない）。
+          // ここを some(...) のままにすると、履歴が1件でもある企業が全部通ってしまい
+          // 「未架電（履歴なし）」だけを選んだときに全件表示になる。
+          const hitEntry = (hasDateFilter || wantResults.length > 0) && history.some(c => {
             if (hasDateFilter) {
               if (!c.date) return false
               const d = new Date(c.date)
@@ -2267,6 +2276,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           allListSources={allListSources}
           callResultOptions={callResultOptions}
           callerOptions={callerOptions}
+          allPrefectures={allPrefectures}
           onAddNew={name => { setInitialCompanyName(name); setEditItem(null); setShowModal(true) }}
         />
       )}

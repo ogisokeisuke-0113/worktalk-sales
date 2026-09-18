@@ -200,9 +200,10 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const wonCompanies = new Set(filtered.filter(p => p.status === '受注').map(p => p.companyName)).size
     // テレアポ獲得数: teleapoItems の callHistory から result='アポ獲得' かつ期間内のものを集計
     const teleapoAppoCount = teleapoItems.reduce((sum, item) => {
-      if (selectedRep.length && !selectedRep.includes(item.salesRep)) return sum
+      /* 担当営業の割当は廃止したので、アポ獲得を記録した本人で絞り込む */
       return sum + (item.callHistory || []).filter(c => {
         if (c.result !== 'アポ獲得') return false
+        if (selectedRep.length && !selectedRep.includes(c.caller)) return false
         if (!c.date) return false
         if (dateFrom && c.date < dateFrom) return false
         if (dateTo && c.date > dateTo) return false
