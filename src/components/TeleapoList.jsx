@@ -389,6 +389,11 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
     }
     onUpdate(updated)
     setShowCallModal(false)
+    // アポ獲得を記録したら、そのまま提案リストへ昇格させる。
+    // すでにアポ確定の企業は二重に作らない。
+    if (record.result === 'アポ獲得' && item.status !== 'アポ確定') {
+      onPromote(updated)
+    }
   }
 
   const keepActive = isKeepActive(item)
@@ -1003,7 +1008,7 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 }
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
-function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, currentUser, salesReps, callerOptions = [], allPrefectures = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
+function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, onPromote, currentUser, salesReps, callerOptions = [], allPrefectures = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
   bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), onToggleBookmark }) {
   // 一度に描画する件数。9,647件を全部描くと DOM が28万ノードになり、
   // 表示に6秒かかってスクロールも重くなる。必要な分だけ描いて継ぎ足す。
@@ -1097,8 +1102,11 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
     }
     onUpdateItem(updated)
     setCallRecordTarget(null)
-    if (record.result === 'アポ獲得') {
-      handlePromote(updated)
+    // アポ獲得を記録したら、そのまま提案リストへ昇格させる。
+    // ここは以前 handlePromote(親の関数) を呼んでおり、このスコープに存在しないため
+    // ReferenceError で止まっていた。結果、手で「アポ確定」を押す運用になっていた。
+    if (record.result === 'アポ獲得' && item.status !== 'アポ確定') {
+      onPromote(updated)
     }
   }
 
@@ -2291,6 +2299,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           callResultOptions={callResultOptions}
           callerOptions={callerOptions}
           allPrefectures={allPrefectures}
+          onPromote={handlePromote}
           onAddNew={name => { setInitialCompanyName(name); setEditItem(null); setShowModal(true) }}
         />
       )}
