@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import PhoneLinks from './PhoneLinks'
 import { dialHref } from '../lib/phone'
-import { TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
+import { PREFECTURES, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
@@ -185,7 +185,15 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">エリア（都道府県）</label>
-              <input type="text" value={form.prefecture || ''} onChange={e => set('prefecture', e.target.value)} className={INPUT} placeholder="東京都" />
+              {/* 表記ゆれ（大阪／大阪府 など）で絞り込みから漏れるのを防ぐため選択式にする。
+                  取り込み済みデータに47以外の値が入っていた場合も消えないよう、その値も候補に出す。 */}
+              <select value={form.prefecture || ''} onChange={e => set('prefecture', e.target.value)} className={INPUT}>
+                <option value="">未設定</option>
+                {PREFECTURES.map(p => <option key={p} value={p}>{p}</option>)}
+                {form.prefecture && !PREFECTURES.includes(form.prefecture) && (
+                  <option value={form.prefecture}>{form.prefecture}（登録済みの値）</option>
+                )}
+              </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">売上規模</label>

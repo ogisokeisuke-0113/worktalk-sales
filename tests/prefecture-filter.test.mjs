@@ -36,5 +36,24 @@ const areaShown = await page.evaluate(() => {
 })
 check('企業カードにエリアが出る', areaShown === '大阪府', String(areaShown))
 
+// 企業編集の都道府県がドロップダウンで、47件そろっていること
+await page.getByText('検索に戻る').first().click()
+await page.waitForTimeout(600)
+await page.getByRole('button', { name: '新規追加' }).first().click()
+await page.waitForTimeout(700)
+const pref = await page.evaluate(() => {
+  // 企業編集モーダル側の見出しは「エリア（都道府県）」
+  const label = [...document.querySelectorAll('label')].find(l => l.textContent.trim() === 'エリア（都道府県）')
+  const field = label?.parentElement?.querySelector('select, input')
+  if (!field) return null
+  return {
+    tag: field.tagName,
+    options: field.tagName === 'SELECT' ? [...field.options].map(o => o.value) : null,
+  }
+})
+check('都道府県が選択式になっている', pref?.tag === 'SELECT', String(pref?.tag))
+check('47都道府県そろっている', pref?.options?.filter(Boolean).length === 47, `${pref?.options?.filter(Boolean).length}件`)
+check('先頭は未設定', pref?.options?.[0] === '', JSON.stringify(pref?.options?.slice(0, 3)))
+
 done(errs)
 await close()
