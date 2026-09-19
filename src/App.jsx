@@ -6,6 +6,7 @@ import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
 import { cacheGet, cacheSet, dropLegacyCache } from './lib/cache'
 import { fetchBookmarks, addBookmark, removeBookmark, updateBookmarkNote, subscribeBookmarks } from './lib/bookmarks'
 import SaveIndicator from './components/SaveIndicator'
+import UpdateBanner from './components/UpdateBanner'
 import PasswordChangeModal from './components/PasswordChangeModal'
 import { EMPLOYEE_SCALES } from './constants'
 const Dashboard = lazy(() => import('./components/Dashboard'))
@@ -349,6 +350,13 @@ export default function App() {
 
     async function doStartupSync() {
       try {
+        // 前回、送り切れずに端末へ預けた分をまず送る。
+        // 取得より先にやらないと、預けた内容が古い取得結果で上書きされて見えなくなる。
+        try {
+          await Promise.all(Object.values(queuesRef.current || {})
+            .map(q => (q.sendOutbox ? q.sendOutbox() : Promise.resolve(0))))
+        } catch { /* 送れなくても箱に残るので、次の起動で再挑戦する */ }
+
         const [remoteProposals, remoteTeleapo, remoteUsers, remoteDownloads, remoteSettings] =
           await Promise.all([
             db.proposals.fetchAll(),
@@ -622,6 +630,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50">
       <SaveIndicator />
+      <UpdateBanner />
       {showPasswordModal && <PasswordChangeModal onClose={() => setShowPasswordModal(false)} />}
       <header className="bg-[#2d6a9e] shadow-md">
         <div className="px-4">

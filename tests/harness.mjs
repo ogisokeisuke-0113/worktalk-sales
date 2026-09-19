@@ -20,7 +20,7 @@ export const company = (id, companyName, over = {}) => ({
   nextCallDate: '', emailStatus: '未送信', appoDate: null, ...over,
 })
 
-export async function open(dist, items, { user = 'テスト太郎' } = {}) {
+export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null } = {}) {
   if (!dist || !fs.existsSync(path.join(dist, 'index.html'))) {
     throw new Error(`dist が見つかりません: ${dist}`)
   }
@@ -55,7 +55,12 @@ export async function open(dist, items, { user = 'テスト太郎' } = {}) {
     if (m !== 'GET') {
       let body = null
       try { body = r.request().postDataJSON() } catch { /* 本文なしの削除など */ }
-      writes.push({ table: (u.split('/rest/v1/')[1] || u).split('?')[0], body })
+      const table = (u.split('/rest/v1/')[1] || u).split('?')[0]
+      writes.push({ table, body })
+      // 保存に失敗し続ける状況を作る
+      if (failWrites && table === 'teleapo_items') {
+        return r.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"test failure"}' })
+      }
     }
     if (m === 'GET' && u.includes('/teleapo_items')) {
       if (u.includes('id=in.')) return json(items.map(i => ({ id: i.id, data: i })))
@@ -70,6 +75,23 @@ export async function open(dist, items, { user = 'テスト太郎' } = {}) {
   const page = await ctx.newPage()
   const errs = []
   page.on('pageerror', e => errs.push(String(e)))
+
+  if (seedOutbox) {
+    // 前回の起動で預かった未送信ぶんを IndexedDB に置いた状態から始める
+    await page.addInitScript(box => {
+      const put = () => new Promise((res, rej) => {
+        const r = indexedDB.open('worktalk_cache', 1)
+        r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('lists')) r.result.createObjectStore('lists') }
+        r.onsuccess = () => {
+          const tx = r.result.transaction('lists', 'readwrite')
+          tx.objectStore('lists').put(box, 'outbox:teleapo')
+          tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error)
+        }
+        r.onerror = () => rej(r.error)
+      })
+      window.__seed = put()
+    }, seedOutbox)
+  }
 
   await page.addInitScript(([name]) => {
     const b64 = o => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o))))

@@ -17,7 +17,10 @@
  *   ★ 比較基準(baseline)は、送信に成功したときにだけ進める。
  */
 
+import { cacheGet, cacheSet } from './cache'
+
 const DEFAULT_DELAY = 1500
+const OUTBOX_KEY = t => `outbox:${t}`
 
 export function createSaveQueue({ name, api, table, url, key }) {
   const q = {
@@ -84,6 +87,8 @@ export function createSaveQueue({ name, api, table, url, key }) {
       q.hot.clear()
       q.fail = 0
       emit('saved', { n: d.changed.length })
+      // 送れたので預かり分は不要
+      cacheSet(OUTBOX_KEY(name), null).catch(() => {})
 
       // 送信中に更に変更が入っていたら続けて送る
       if (q.latest !== d.snapshot) schedule(400, true)
@@ -96,6 +101,7 @@ export function createSaveQueue({ name, api, table, url, key }) {
       const isAuth = /JWT|not authorized|permission denied|401|403|row-level security/i.test(msg)
       console.warn(`[wt-save:${name}] 保存に失敗、再試行します:`, msg)
       emit(isAuth ? 'authError' : 'error', { msg, n: d.changed.length, fail: q.fail })
+      saveOutbox().catch(() => {})
       schedule(Math.min(30000, DEFAULT_DELAY * 2 ** Math.min(q.fail, 4)), true)
     } finally {
       q.flushing = false
@@ -131,7 +137,7 @@ export function createSaveQueue({ name, api, table, url, key }) {
 
   try {
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') { flush(); flushSync() }
+      if (document.visibilityState === 'hidden') { flush(); flushSync(); saveOutbox().catch(() => {}) }
     })
     window.addEventListener('pagehide', flushSync)
     window.addEventListener('beforeunload', ev => {
@@ -157,6 +163,47 @@ export function createSaveQueue({ name, api, table, url, key }) {
       if (a > b || (!before && a > 0)) { q.hot.add(it.id); urgent = true }
     }
     urgent ? schedule(0, true) : schedule(DEFAULT_DELAY)
+  }
+
+  /* 未送信ぶんを端末(IndexedDB)に預ける。
+     再読み込みやタブを閉じた拍子に、メモリ上の未送信分が消えるのを防ぐ。
+     とくに「保存の仕組みを直した版」を配ったときは、古いコードで送り切るより
+     預けておいて新しいコードに送らせるほうが確実。 */
+  async function saveOutbox() {
+    try {
+      const d = diff()
+      if (!d.changed.length && !d.dels.length) { await cacheSet(OUTBOX_KEY(name), null); return false }
+      await cacheSet(OUTBOX_KEY(name), { at: Date.now(), changed: d.changed, dels: d.dels })
+      return true
+    } catch (e) {
+      console.warn(`[wt-save:${name}] 未送信分を預けられませんでした:`, e && e.message)
+      return false
+    }
+  }
+
+  /* 起動時に、前回預かった未送信ぶんを送る。送れたら箱を空にする。 */
+  async function sendOutbox() {
+    let box = null
+    try { box = await cacheGet(OUTBOX_KEY(name)) } catch { return 0 }
+    if (!box || (!box.changed?.length && !box.dels?.length)) return 0
+    try {
+      if (box.changed?.length) await api.upsert(box.changed)
+      if (box.dels?.length) await api.delete(box.dels)
+      await cacheSet(OUTBOX_KEY(name), null)
+      console.info(`[wt-save:${name}] 前回の未送信ぶん ${box.changed?.length || 0} 件を送りました`)
+      emit('saved', { n: box.changed?.length || 0, fromOutbox: true })
+      return box.changed?.length || 0
+    } catch (e) {
+      // 送れなければ箱に残したまま。次の起動でまた試す。
+      console.warn(`[wt-save:${name}] 未送信ぶんを送れませんでした:`, e && e.message)
+      return 0
+    }
+  }
+
+  /* 送信待ちが残っていないか。強制更新の前に確認する。 */
+  function isPending() {
+    const d = diff()
+    return d.changed.length > 0 || d.dels.length > 0
   }
 
   // その行に未送信の変更を持っているか。
@@ -197,7 +244,7 @@ export function createSaveQueue({ name, api, table, url, key }) {
     q.hot.clear()
   }
 
-  const handle = { enqueue, flush, flushSync, applyRemote, resetBaseline, state: q }
+  const handle = { enqueue, flush, flushSync, applyRemote, resetBaseline, saveOutbox, sendOutbox, isPending, state: q }
   // 保存インジケータから「即時再送」できるように登録しておく
   try { (globalThis.__wtQueues || (globalThis.__wtQueues = {}))[name] = handle } catch { /* noop */ }
   return handle
