@@ -16,6 +16,17 @@ const teleapoWonCall = item =>
   (item?.callHistory || []).find(c => c && c.result === 'アポ獲得') || null
 const hasTeleapoAppo = item => !!teleapoWonCall(item)
 
+/* 保存値は UTC の ISO。日付で絞り込むときは日本時間（利用者の時計）の日付に直す。
+   そのまま slice(0,10) すると、朝9時より前の架電が前日に数えられてしまう。 */
+const localDay = (value) => {
+  const v = String(value || '')
+  if (!v) return ''
+  if (v.length === 10) return v          // すでに YYYY-MM-DD
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return v.slice(0, 10)
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+}
+
 const COLORS = ['#1a5285', '#2d6a9e', '#4a82ae', '#6e9bbf', '#93b5d0', '#0f8a7e', '#c97a1a', '#d94452']
 
 const HEATMAP_KEYS = {
@@ -570,7 +581,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     return teleapoItems.filter(item => {
       if (emailIndustryFilter.length > 0 && !emailIndustryFilter.includes(item.industry || '(未設定)')) return false
       if (emailDateFrom || emailDateTo) {
-        const sentAt = item.emailSentAt ? item.emailSentAt.slice(0, 10) : null
+        const sentAt = item.emailSentAt ? localDay(item.emailSentAt) : null
         if (!sentAt) return false
         if (emailDateFrom && sentAt < emailDateFrom) return false
         if (emailDateTo && sentAt > emailDateTo) return false
@@ -588,7 +599,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         // 担当フィルターがある場合、callerが一致する架電のみカウント
         if (teleapoRepFilter.length > 0 && !teleapoRepFilter.includes(c.caller)) return false
         if (!c.date) return false
-        const day = c.date.slice(0, 10)
+        const day = localDay(c.date)
         if (teleapoDateFrom && day < teleapoDateFrom) return false
         if (teleapoDateTo && day > teleapoDateTo) return false
         return true
@@ -608,7 +619,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       if (!teleapoDateFrom && !teleapoDateTo) return true
       const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return false  // アポ日不明は期間外として除外
-      const d = appoDate.slice(0, 10)
+      const d = localDay(appoDate)
       if (teleapoDateFrom && d < teleapoDateFrom) return false
       if (teleapoDateTo && d > teleapoDateTo) return false
       return true
@@ -616,7 +627,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const totalKeeps = teleapoFiltered.reduce((s, i) => {
       const keeps = (i.keepHistory || []).filter(k => {
         if (!teleapoDateFrom && !teleapoDateTo) return true
-        const day = (k.at || '').slice(0, 10)
+        const day = localDay(k.at)
         if (!day) return false
         if (teleapoDateFrom && day < teleapoDateFrom) return false
         if (teleapoDateTo && day > teleapoDateTo) return false
@@ -638,7 +649,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       if (!teleapoDateFrom && !teleapoDateTo) return true
       const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return false
-      const d = appoDate.slice(0, 10)
+      const d = localDay(appoDate)
       if (teleapoDateFrom && d < teleapoDateFrom) return false
       if (teleapoDateTo && d > teleapoDateTo) return false
       return true
@@ -779,7 +790,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     teleapoFiltered.forEach(item => {
       ;(item.keepHistory || []).forEach(k => {
         if (teleapoDateFrom || teleapoDateTo) {
-          const day = (k.at || '').slice(0, 10)
+          const day = localDay(k.at)
           if (!day) return
           if (teleapoDateFrom && day < teleapoDateFrom) return
           if (teleapoDateTo && day > teleapoDateTo) return
@@ -793,7 +804,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
         const appoDate = item.appoDate || teleapoWonCall(item)?.date
         if (teleapoDateFrom || teleapoDateTo) {
           if (appoDate) {
-            const day = appoDate.slice(0, 10)
+            const day = localDay(appoDate)
             if (teleapoDateFrom && day < teleapoDateFrom) return
             if (teleapoDateTo && day > teleapoDateTo) return
           } else {
@@ -828,7 +839,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const map = {}
     allCalls.forEach(c => {
       if (!c.date) return
-      const day = c.date.slice(0, 10)
+      const day = localDay(c.date)
       if (!map[day]) map[day] = { date: day, calls: 0 }
       map[day].calls++
     })
@@ -900,7 +911,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const everKept = teleapoFiltered.filter(i => {
       const keeps = (i.keepHistory || []).filter(k => {
         if (!teleapoDateFrom && !teleapoDateTo) return true
-        const day = (k.at || '').slice(0, 10)
+        const day = localDay(k.at)
         if (!day) return false
         if (teleapoDateFrom && day < teleapoDateFrom) return false
         if (teleapoDateTo && day > teleapoDateTo) return false

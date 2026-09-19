@@ -6,6 +6,7 @@ import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
 import { prefectureFromPhone } from '../lib/areaCode'
+import { historyKey } from '../lib/db'
 
 const INPUT = 'w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6e9bbf]'
 
@@ -329,15 +330,25 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
 const CALL_CONTENTS = ['worktalk', '人材紹介', 'その他']
 
 /* ───────────────────── 架電記録サイドパネル ───────────────────── */
-function CallRecordModal({ onSave, onClose }) {
+/* 新規記録と編集の両方で使う。record を渡すと編集モードになる。 */
+function CallRecordModal({ onSave, onClose, record = null }) {
   const today = new Date().toISOString().slice(0, 10)
+  /* 保存値は UTC の ISO。入力欄には日本時間の日付を出す必要がある
+     （UTCのまま切り出すと、朝9時より前の記録が前日になってしまう）。 */
+  const localDay = iso => {
+    if (!iso) return today
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return today
+    return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-')
+  }
+  const isEdit = !!record
   const [form, setForm] = useState({
-    callDate: today,
-    callContent: '',
-    callType: '',
-    result: '',
-    rejectionReason: '',
-    note: '',
+    callDate: record ? localDay(record.date) : today,
+    callContent: record?.callContent || '',
+    callType: record?.callType || '',
+    result: record?.result || '',
+    rejectionReason: record?.rejectionReason || '',
+    note: record?.note || '',
     nextCallDate: '',
   })
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
@@ -345,11 +356,12 @@ function CallRecordModal({ onSave, onClose }) {
   const handleSave = () => {
     if (!form.result) return
     const { callDate, ...rest } = form
-    // 今日ならこれまでどおり現在時刻。過去日なら正午に置く。
-    // 0時だと時差で前日に転びうるため、日付のズレが起きない正午にする。
-    const date = (!callDate || callDate === today)
-      ? new Date().toISOString()
-      : new Date(`${callDate}T12:00:00`).toISOString()
+    // 日付を変えていなければ元の時刻を保つ。新規で今日なら現在時刻。
+    // 日付を変えた場合は正午に置く（0時だと時差で前日に転びうるため）。
+    let date
+    if (isEdit && callDate === localDay(record.date)) date = record.date
+    else if (!callDate || (!isEdit && callDate === today)) date = new Date().toISOString()
+    else date = new Date(`${callDate}T12:00:00`).toISOString()
     onSave({ ...rest, date })
   }
 
@@ -360,7 +372,7 @@ function CallRecordModal({ onSave, onClose }) {
       {/* サイドパネル */}
       <div className="relative w-80 h-full bg-white shadow-2xl flex flex-col animate-slide-right">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-          <h3 className="text-base font-bold text-slate-800">架電結果を記録</h3>
+          <h3 className="text-base font-bold text-slate-800">{isEdit ? '架電記録を編集' : '架電結果を記録'}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -427,6 +439,7 @@ function CallRecordModal({ onSave, onClose }) {
 /* ───────────────────── 詳細パネル ───────────────────── */
 function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, currentUser }) {
   const [showCallModal, setShowCallModal] = useState(false)
+  const [editingCall, setEditingCall] = useState(null)
   const callCount = (item.callHistory || []).length
 
   const addCallRecord = (record) => {
@@ -444,6 +457,30 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
     if (record.result === 'アポ獲得' && item.status !== 'アポ確定') {
       onPromote(updated)
     }
+  }
+
+  /* 架電記録の修正。記録した人(caller)と id は引き継ぐ。
+     call_logs には記録時点の控えが残るので、消しても元の値は追える。 */
+  const saveEditedCall = (record) => {
+    const target = editingCall
+    onUpdate({
+      ...item,
+      callHistory: (item.callHistory || []).map(c =>
+        (c === target || (c.id && c.id === target.id)) ? { ...c, ...record } : c),
+    })
+    setEditingCall(null)
+  }
+  const deleteCall = (c) => {
+    if (!window.confirm('この架電記録を削除しますか？\n集計にも反映されます。')) return
+    /* 保存時にサーバー側の履歴をマージし直す安全装置があるため、
+       消しただけでは復活してしまう。消した印(deletedCalls)を残して除外させる。
+       記録そのものは call_logs に控えが残るので、後から追える。 */
+    const key = historyKey(c)
+    onUpdate({
+      ...item,
+      callHistory: (item.callHistory || []).filter(x => !(x === c || historyKey(x) === key)),
+      deletedCalls: [...new Set([...(item.deletedCalls || []), key])],
+    })
   }
 
   const keepActive = isKeepActive(item)
@@ -647,6 +684,13 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
                     )}
                     {c.rejectionReason && <p className="text-xs text-rose-500 mb-0.5">断り理由: {c.rejectionReason}</p>}
                     {c.note && <p className="text-xs text-slate-600">{c.note}</p>}
+                    <div className="flex items-center gap-2 mt-1.5 pt-1.5 border-t border-slate-100">
+                      {c.caller && <span className="text-[10px] text-slate-400">{c.caller}</span>}
+                      <button onClick={() => setEditingCall(c)}
+                        className="ml-auto text-[11px] font-medium text-[#2d6a9e] hover:underline">編集</button>
+                      <button onClick={() => deleteCall(c)}
+                        className="text-[11px] font-medium text-[#be123c] hover:underline">削除</button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -657,6 +701,9 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
 
       {showCallModal && (
         <CallRecordModal onSave={addCallRecord} onClose={() => setShowCallModal(false)} />
+      )}
+      {editingCall && (
+        <CallRecordModal record={editingCall} onSave={saveEditedCall} onClose={() => setEditingCall(null)} />
       )}
     </div>
   )
@@ -2101,7 +2148,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
         const hasResultFilter = filters.callResult.length > 0
         if (hasDateFilter || hasResultFilter) {
           const from = filters.callDateFrom ? new Date(filters.callDateFrom + 'T00:00:00') : null
-          const to = filters.callDateTo ? new Date(filters.callDateTo + 'T23:59:59') : null
+          const to = filters.callDateTo ? new Date(filters.callDateTo + 'T23:59:59.999') : null
           const wantNone = hasResultFilter && filters.callResult.includes(CALL_RESULT_NONE)
           const wantResults = hasResultFilter ? filters.callResult.filter(v => v !== CALL_RESULT_NONE) : []
           // 「未架電」条件：日付フィルターなし かつ 履歴が0件

@@ -22,7 +22,7 @@ async function upsertRows(table, items, { withTimestamp = true } = {}) {
 // 履歴エントリの同一判定。id があればそれを使う。
 // 「date|caller」だけで判定すると、同じ人が同じ日に同じ会社へ2回架電したとき
 // 2件目が重複扱いで消えてしまう。
-const historyKey = c => (c && c.id ? `#${c.id}` : `${c && c.date}|${c && c.caller}`)
+export const historyKey = c => (c && c.id ? `#${c.id}` : `${c && c.date}|${c && c.caller}`)
 
 // call_logs の1行を組み立てる。
 // dedup_key は supabase/migrations/001_call_logs.sql のバックフィルと同じ規則にすること。
@@ -70,17 +70,26 @@ async function upsertTeleapoWithMerge(items) {
     const serverItem = serverMap[item.id]
     let callHistory = item.callHistory || []
 
+    // 人が消した記録の印。これが無いと、下のマージでサーバー側から復活してしまう。
+    const deleted = new Set([
+      ...(item.deletedCalls || []),
+      ...((serverItem && serverItem.deletedCalls) || []),
+    ])
+    if (deleted.size) callHistory = callHistory.filter(c => !deleted.has(historyKey(c)))
+
     const serverKeys = new Set(((serverItem && serverItem.callHistory) || []).map(historyKey))
     ;(item.callHistory || []).forEach((c, i) => {
-      if (!serverKeys.has(historyKey(c))) newLogs.push(toCallLogRow(item, c, i))
+      if (!serverKeys.has(historyKey(c)) && !deleted.has(historyKey(c))) newLogs.push(toCallLogRow(item, c, i))
     })
 
     if (serverItem?.callHistory?.length) {
       const keys = new Set(callHistory.map(historyKey))
       for (const c of serverItem.callHistory) {
-        if (!keys.has(historyKey(c))) {
+        const k = historyKey(c)
+        // 消された記録は戻さない。それ以外は、他の人が同時に入れた記録なので残す。
+        if (!keys.has(k) && !deleted.has(k)) {
           callHistory = [...callHistory, c]
-          keys.add(historyKey(c))
+          keys.add(k)
         }
       }
       callHistory = callHistory.slice().sort((a, b) => String(a?.date).localeCompare(String(b?.date)))
@@ -88,7 +97,7 @@ async function upsertTeleapoWithMerge(items) {
 
     return {
       id: item.id,
-      data: { ...item, callHistory },
+      data: { ...item, callHistory, ...(deleted.size ? { deletedCalls: [...deleted] } : {}) },
       updated_at: new Date().toISOString(),
     }
   })
