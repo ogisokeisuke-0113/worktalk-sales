@@ -145,16 +145,56 @@ async function fetchRows(table) {
   return all
 }
 
+/**
+ * 前回以降に変わった行だけを取る。
+ *
+ * Realtime は「つながっている間」の変更しか届かない。
+ * スリープ・Wi-Fi切替・タブ放置で接続が切れると、その間の変更は永久に来ない。
+ * これが「再読み込みするまで古いまま」の正体なので、ここで穴を埋める。
+ *
+ * 次回の起点は、サーバーが返した updated_at の最大値を使う。
+ * 端末の時計を使うと、ズレている人の分だけ取りこぼす。
+ */
+/** いまサーバーにある最新の updated_at。差分同期の起点に使う。 */
+async function latestStamp(table) {
+  if (!supabase) return null
+  const { data, error } = await supabase.from(table)
+    .select('updated_at').order('updated_at', { ascending: false }).limit(1)
+  if (error || !data?.length) return null
+  return data[0].updated_at
+}
+
+async function fetchRowsSince(table, since) {
+  if (!supabase) return null
+  const PAGE = 500
+  let rows = [], cursor = since
+  for (let guard = 0; guard < 40; guard++) {
+    let q = supabase.from(table).select('id,data,updated_at').order('updated_at', { ascending: true }).limit(PAGE)
+    if (cursor) q = q.gt('updated_at', cursor)
+    const { data, error } = await q
+    if (error) { console.warn(`[db:${table}] 差分取得に失敗:`, error.message); return null }
+    if (!data || !data.length) break
+    rows = rows.concat(data)
+    cursor = data[data.length - 1].updated_at
+    if (data.length < PAGE) break
+  }
+  return { rows, cursor: cursor || since }
+}
+
 export const db = {
   proposals: {
     upsert: items => upsertRows('proposals', items),
     delete: ids => deleteRows('proposals', ids),
     fetchAll: () => fetchRows('proposals'),
+    fetchSince: since => fetchRowsSince('proposals', since),
+    latestStamp: () => latestStamp('proposals'),
   },
   teleapoItems: {
     upsert: items => upsertTeleapoWithMerge(items),
     delete: ids => deleteRows('teleapo_items', ids),
     fetchAll: () => fetchRows('teleapo_items'),
+    fetchSince: since => fetchRowsSince('teleapo_items', since),
+    latestStamp: () => latestStamp('teleapo_items'),
   },
   users: {
     upsert: items => upsertRows('users', items, { withTimestamp: false }),

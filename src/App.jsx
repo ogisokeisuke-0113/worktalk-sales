@@ -3,6 +3,7 @@ import { loadProposals, saveProposals, loadTeleapo, saveTeleapo, loadSettings, s
 import { db } from './lib/db'
 import { supabase, isSupabaseEnabled } from './lib/supabase'
 import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
+import { startLiveSync } from './lib/liveSync'
 import { cacheGet, cacheSet, dropLegacyCache } from './lib/cache'
 import { fetchBookmarks, addBookmark, removeBookmark, updateBookmarkNote, subscribeBookmarks } from './lib/bookmarks'
 import SaveIndicator from './components/SaveIndicator'
@@ -306,6 +307,7 @@ export default function App() {
       proposals: createSaveQueue({ name: 'proposals', api: db.proposals, table: 'proposals', url, key }),
     }
   }
+  const liveSyncStopRef = useRef([])
   const prevUsersRef = useRef(null)
   const prevDownloadLeadsRef = useRef(null)
   const userMenuRef = useRef(null)
@@ -404,6 +406,21 @@ export default function App() {
 
       subscribeChanges(supabase, 'teleapo_items', queuesRef.current.teleapo, setTeleapoItems)
       subscribeChanges(supabase, 'proposals', queuesRef.current.proposals, setProposals)
+
+      // Realtime はつながっている間しか届かない。スリープや通信断で切れていた間の
+      // 変更を、updated_at を頼りに差分だけ取りに行って埋める。
+      try {
+        const [tStamp, pStamp] = await Promise.all([
+          db.teleapoItems.latestStamp(),
+          db.proposals.latestStamp(),
+        ])
+        liveSyncStopRef.current.push(
+          startLiveSync({ api: db.teleapoItems, queue: queuesRef.current.teleapo, setItems: setTeleapoItems, since: tStamp }),
+          startLiveSync({ api: db.proposals, queue: queuesRef.current.proposals, setItems: setProposals, since: pStamp }),
+        )
+      } catch (e) {
+        console.warn('[livesync] 開始できませんでした:', e && e.message)
+      }
     }
 
     doStartupSync()

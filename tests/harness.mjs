@@ -20,7 +20,7 @@ export const company = (id, companyName, over = {}) => ({
   nextCallDate: '', emailStatus: '未送信', appoDate: null, ...over,
 })
 
-export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null } = {}) {
+export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null } = {}) {
   if (!dist || !fs.existsSync(path.join(dist, 'index.html'))) {
     throw new Error(`dist が見つかりません: ${dist}`)
   }
@@ -65,9 +65,22 @@ export async function open(dist, items, { user = 'テスト太郎', failWrites =
     if (m === 'GET' && u.includes('/teleapo_items')) {
       if (u.includes('id=in.')) return json(items.map(i => ({ id: i.id, data: i })))
       const q = new URL(u).searchParams
+      const sel = q.get('select') || ''
+      // 差分同期の問い合わせ（updated_at の並べ替え付き）はテスト側の台帳で答える
+      if (live && sel.includes('updated_at')) {
+        if (sel === 'updated_at') return json(live.stamp ? [{ updated_at: live.stamp }] : [])
+        const since = (q.get('updated_at') || '').replace(/^gt\./, '')
+        const rows = live.rows.filter(r => !since || r.updated_at > since)
+        return json(rows)
+      }
       const off = Number(q.get('offset') || 0)
       const lim = Number(q.get('limit') || 1000)
       return json(items.slice(off, off + lim).map(i => ({ data: i })))
+    }
+    if (m === 'GET' && live && u.includes('/proposals')) {
+      const sel = new URL(u).searchParams.get('select') || ''
+      if (sel === 'updated_at') return json(live.stamp ? [{ updated_at: live.stamp }] : [])
+      if (sel.includes('updated_at')) return json([])
     }
     return json([])
   })
