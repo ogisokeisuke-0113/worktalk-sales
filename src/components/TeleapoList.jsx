@@ -331,7 +331,7 @@ const CALL_CONTENTS = ['worktalk', '人材紹介', 'その他']
 
 /* ───────────────────── 架電記録サイドパネル ───────────────────── */
 /* 新規記録と編集の両方で使う。record を渡すと編集モードになる。 */
-function CallRecordModal({ onSave, onClose, record = null }) {
+function CallRecordModal({ onSave, onClose, record = null, nextCallDate = '' }) {
   const today = new Date().toISOString().slice(0, 10)
   /* 保存値は UTC の ISO。入力欄には日本時間の日付を出す必要がある
      （UTCのまま切り出すと、朝9時より前の記録が前日になってしまう）。 */
@@ -349,7 +349,9 @@ function CallRecordModal({ onSave, onClose, record = null }) {
     result: record?.result || '',
     rejectionReason: record?.rejectionReason || '',
     note: record?.note || '',
-    nextCallDate: '',
+    // いまの予定日を出しておく。空欄から始めると、触っていない人の予定日を
+    // 消してしまうか、逆に消したい人が消せないかのどちらかになる。
+    nextCallDate: nextCallDate || '',
   })
   const set = (key, value) => setForm(prev => ({ ...prev, [key]: value }))
 
@@ -448,7 +450,9 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
       ...item,
       callHistory: [...(item.callHistory || []), { ...callRecord, caller: currentUser?.name || '', id: crypto.randomUUID() }],
       status: item.status === '未架電' ? '架電済' : item.status,
-      ...(nextCallDate ? { nextCallDate } : {}),
+      // 入力欄には今の値が出ているので、そのまま反映してよい。
+      // 「値があるときだけ上書き」にすると、空にして消すことができない。
+      nextCallDate: nextCallDate || '',
     }
     onUpdate(updated)
     setShowCallModal(false)
@@ -463,10 +467,14 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
      call_logs には記録時点の控えが残るので、消しても元の値は追える。 */
   const saveEditedCall = (record) => {
     const target = editingCall
+    // 次回架電予定日は企業ごとの項目。架電記録の中に入れても意味がないので、
+    // ここで取り出して企業側へ反映する。
+    const { nextCallDate, ...callRecord } = record
     onUpdate({
       ...item,
       callHistory: (item.callHistory || []).map(c =>
-        (c === target || (c.id && c.id === target.id)) ? { ...c, ...record } : c),
+        (c === target || (c.id && c.id === target.id)) ? { ...c, ...callRecord } : c),
+      nextCallDate: nextCallDate || '',
     })
     setEditingCall(null)
   }
@@ -700,10 +708,12 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
       </div>
 
       {showCallModal && (
-        <CallRecordModal onSave={addCallRecord} onClose={() => setShowCallModal(false)} />
+        <CallRecordModal onSave={addCallRecord} onClose={() => setShowCallModal(false)}
+          nextCallDate={item.nextCallDate || ''} />
       )}
       {editingCall && (
-        <CallRecordModal record={editingCall} onSave={saveEditedCall} onClose={() => setEditingCall(null)} />
+        <CallRecordModal record={editingCall} onSave={saveEditedCall} onClose={() => setEditingCall(null)}
+          nextCallDate={item.nextCallDate || ''} />
       )}
     </div>
   )
@@ -1190,7 +1200,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
       ...item,
       callHistory: [...(item.callHistory || []), { ...callRecord, caller: currentUser?.name || '', id: crypto.randomUUID() }],
       status: item.status === '未架電' ? '架電済' : item.status,
-      ...(nextCallDate ? { nextCallDate } : {}),
+      nextCallDate: nextCallDate || '',
       ...(newContactName ? { contactName: newContactName } : {}),
     }
     onUpdateItem(updated)
@@ -1781,6 +1791,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
         <CallRecordModal
           onSave={(record) => addCallRecord(callRecordTarget, record)}
           onClose={() => setCallRecordTarget(null)}
+          nextCallDate={callRecordTarget?.nextCallDate || ''}
         />
       )}
 
