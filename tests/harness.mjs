@@ -20,7 +20,7 @@ export const company = (id, companyName, over = {}) => ({
   nextCallDate: '', emailStatus: '未送信', appoDate: null, ...over,
 })
 
-export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null } = {}) {
+export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null } = {}) {
   if (!dist || !fs.existsSync(path.join(dist, 'index.html'))) {
     throw new Error(`dist が見つかりません: ${dist}`)
   }
@@ -76,6 +76,9 @@ export async function open(dist, items, { user = 'テスト太郎', failWrites =
       const off = Number(q.get('offset') || 0)
       const lim = Number(q.get('limit') || 1000)
       return json(items.slice(off, off + lim).map(i => ({ data: i })))
+    }
+    if (m === 'GET' && users && u.includes('/users')) {
+      return json(users.map(x => ({ data: x })))
     }
     if (m === 'GET' && live && u.includes('/proposals')) {
       const sel = new URL(u).searchParams.get('select') || ''

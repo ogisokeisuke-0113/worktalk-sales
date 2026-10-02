@@ -16,6 +16,16 @@ const teleapoWonCall = item =>
   (item?.callHistory || []).find(c => c && c.result === 'アポ獲得') || null
 const hasTeleapoAppo = item => !!teleapoWonCall(item)
 
+/* アポは「獲得を記録した本人」の実績として数える。
+   担当で絞るとき、その人が過去に架電しただけの企業まで含めると、
+   2人が関わった企業が両方に計上され、合計が全体より多くなる。
+   （2026-10-02 実測: 全体10件に対し 梶田7＋美藤5＝12 になっていた） */
+const appoBelongsTo = (item, repFilter) => {
+  if (!repFilter || !repFilter.length) return true
+  const c = teleapoWonCall(item)
+  return !!c && repFilter.includes(String(c.caller || '').trim())
+}
+
 /* 保存値は UTC の ISO。日付で絞り込むときは日本時間（利用者の時計）の日付に直す。
    そのまま slice(0,10) すると、朝9時より前の架電が前日に数えられてしまう。 */
 const localDay = (value) => {
@@ -616,6 +626,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const uncalled = total - called
     const appoConfirmed = teleapoFiltered.filter(i => {
       if (!hasTeleapoAppo(i)) return false
+      if (!appoBelongsTo(i, teleapoRepFilter)) return false
       if (!teleapoDateFrom && !teleapoDateTo) return true
       const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return false  // アポ日不明は期間外として除外
@@ -640,12 +651,13 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const digestRate = total > 0 ? Number(((called / total) * 100).toFixed(1)) : 0
     const appoRate = called > 0 ? Number(((appoConfirmed / called) * 100).toFixed(1)) : 0
     return { total, totalCalls, kept, called, uncalled, appoConfirmed, totalKeeps, connectionRate, digestRate, appoRate }
-  }, [teleapoFiltered, teleapoCallFiltered, teleapoDateFrom, teleapoDateTo])
+  }, [teleapoFiltered, teleapoCallFiltered, teleapoRepFilter, teleapoDateFrom, teleapoDateTo])
 
   // 日付フィルター済みアポ確定リスト（アポ獲得日が期間内）
   const teleapoAppoFiltered = useMemo(() => {
     return teleapoFiltered.filter(i => {
       if (!hasTeleapoAppo(i)) return false
+      if (!appoBelongsTo(i, teleapoRepFilter)) return false
       if (!teleapoDateFrom && !teleapoDateTo) return true
       const appoDate = i.appoDate || (i.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return false
@@ -654,7 +666,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       if (teleapoDateTo && d > teleapoDateTo) return false
       return true
     })
-  }, [teleapoFiltered, teleapoDateFrom, teleapoDateTo])
+  }, [teleapoFiltered, teleapoRepFilter, teleapoDateFrom, teleapoDateTo])
 
   // ファネル（登録 → 架電済 → アポ確定）
   const teleapoFunnel = useMemo(() => {
@@ -672,7 +684,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
   const teleapoAppoByMonth = useMemo(() => {
     const map = {}
     // 担当フィルターは適用、日付フィルターは適用しない（月別トレンドを全期間で表示）
-    const base = teleapoFiltered.filter(hasTeleapoAppo)
+    const base = teleapoFiltered.filter(i => hasTeleapoAppo(i) && appoBelongsTo(i, teleapoRepFilter))
     base.forEach(item => {
       const appoDate = item.appoDate || (item.callHistory || []).find(c => c.result === 'アポ獲得')?.date
       if (!appoDate) return
@@ -687,7 +699,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
       map[month][rep] = (map[month][rep] || 0) + 1
     })
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month))
-  }, [teleapoFiltered])
+  }, [teleapoFiltered, teleapoRepFilter])
 
   // 週別架電推移（結果別積み上げ）
   const teleapoWeekly = useMemo(() => {
