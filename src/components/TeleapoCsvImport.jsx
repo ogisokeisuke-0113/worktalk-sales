@@ -189,18 +189,22 @@ function findHeaderRow(rows) {
   return 0
 }
 
-// 電話番号の正規化（ハイフン除去して比較用キーを作る）
-function normalizePhone(phone) {
-  if (!phone) return ''
-  return phone.replace(/[\s\-−ー()（）]/g, '')
+/* 比較用に全角を半角へ寄せる */
+function toHalf(v) {
+  return String(v || '').replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
 }
 
-// 重複チェックキー: 企業名 + 電話番号（正規化済み）
-function makeDedupKey(item) {
-  return [
-    (item.companyName || '').trim().toLowerCase(),
-    normalizePhone(item.phone),
-  ].join('|')
+// 電話番号の正規化（数字だけにして比較する）
+function normalizePhone(phone) {
+  if (!phone) return ''
+  return toHalf(phone).replace(/\D/g, '')
+}
+
+/* 企業名の正規化。全角・空白・大文字小文字の差は同じ会社として扱う。
+   「株式会社」の有無や前後は会社ごとに書き方が割れるため、ここでは消さない。
+   消すと別会社どうしが同じ扱いになり、登録できなくなるほうの被害が大きい。 */
+function normalizeName(name) {
+  return toHalf(name).replace(/[\s　]/g, '').toLowerCase()
 }
 
 export default function TeleapoCsvImport({ onImport, onClose, existingItems = [], proposedItems = [], salesReps = [], settings = {}, onUpdateItems }) {
@@ -365,17 +369,28 @@ export default function TeleapoCsvImport({ onImport, onClose, existingItems = []
       obj.companyName && obj.phone && obj.industry && obj.employeeScale
     )
 
-    // 重複チェック: 既存テレアポデータとの照合
-    const existingKeys = new Set(existingItems.map(makeDedupKey))
+    /* 重複チェック：企業名か電話番号の「どちらか」が一致したら重複とみなす。
+       以前は両方そろったときだけ重複としていたため、同じ会社でも番号が違えば
+       登録できてしまっていた（例：マイキャリア株式会社 06-… と 050-…）。 */
+    const existingNames = new Set()
+    const existingPhones = new Set()
+    for (const it of existingItems) {
+      const n = normalizeName(it.companyName); if (n) existingNames.add(n)
+      const p = normalizePhone(it.phone); if (p) existingPhones.add(p)
+    }
     const dupes = []
     const unique = valid.filter(item => {
-      const key = makeDedupKey(item)
-      if (existingKeys.has(key)) {
-        dupes.push(item)
+      const n = normalizeName(item.companyName)
+      const p = normalizePhone(item.phone)
+      const hitName = !!n && existingNames.has(n)
+      const hitPhone = !!p && existingPhones.has(p)
+      if (hitName || hitPhone) {
+        dupes.push({ ...item, _dupReason: hitName && hitPhone ? '企業名・電話番号' : hitName ? '企業名' : '電話番号' })
         return false
       }
-      // CSV内の重複も除外
-      existingKeys.add(key)
+      // CSV内の重複も同じ基準で除外する
+      if (n) existingNames.add(n)
+      if (p) existingPhones.add(p)
       return true
     })
 
@@ -489,7 +504,7 @@ export default function TeleapoCsvImport({ onImport, onClose, existingItems = []
                 <ul className="list-disc list-inside space-y-1">
                   <li><span className="font-bold">必須カラム</span>：企業名、電話番号、業種、従業員規模</li>
                   <li>担当営業は省略可（一括で指定できます）</li>
-                  <li>電話番号＋企業名で重複チェックを行います</li>
+                  <li><span className="font-bold">企業名か電話番号のどちらかが一致</span>したら重複として除外します</li>
                   <li>UTF-8のCSVファイルに対応</li>
                 </ul>
               </div>
@@ -647,6 +662,7 @@ export default function TeleapoCsvImport({ onImport, onClose, existingItems = []
                             <td className="px-2 py-1 font-medium">{d.companyName}</td>
                             <td className="px-2 py-1 text-slate-500">{d.phone}</td>
                             <td className="px-2 py-1 text-slate-500">{d.industry}</td>
+                            <td className="px-2 py-1 text-amber-700 whitespace-nowrap">{d._dupReason}が一致</td>
                           </tr>
                         ))}
                       </tbody>
