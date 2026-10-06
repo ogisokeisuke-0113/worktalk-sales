@@ -65,9 +65,18 @@ jobs:
       # 機械が毎回確かめる以外に防ぐ方法が無いので、ここで配信前に止める。
       # 通信はすべて偽物に差し替えたうえ、*.supabase.co は解決不能にしてあるので
       # 本番DBには一切触れない。
+      # ブラウザは毎回ダウンロードすると20秒ほどかかるので取っておく
+      - name: ブラウザの取り置きを確認
+        id: pwcache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
       - name: ブラウザを用意
         run: npx playwright install --with-deps chromium
 
+      # 1本ずつ流すと5分近くかかっていたため同時実行にしている（実測281秒→84秒）
       - name: 回帰テスト
         run: npm run test:e2e
 
