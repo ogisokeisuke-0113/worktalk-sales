@@ -20,7 +20,7 @@ export const company = (id, companyName, over = {}) => ({
   nextCallDate: '', emailStatus: '未送信', appoDate: null, ...over,
 })
 
-export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null } = {}) {
+export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null, bookmarks = null } = {}) {
   if (!dist || !fs.existsSync(path.join(dist, 'index.html'))) {
     throw new Error(`dist が見つかりません: ${dist}`)
   }
@@ -76,6 +76,36 @@ export async function open(dist, items, { user = 'テスト太郎', failWrites =
       const off = Number(q.get('offset') || 0)
       const lim = Number(q.get('limit') || 1000)
       return json(items.slice(off, off + lim).map(i => ({ data: i })))
+    }
+    if (bookmarks && u.includes('/teleapo_bookmarks')) {
+      // テスト内でブックマークの台帳を持ち、追加・移動・名前変更をそのまま反映する
+      if (m === 'GET') return json(bookmarks.rows)
+      const body = (() => { try { return r.request().postDataJSON() } catch { return null } })()
+      const q = new URL(u).searchParams
+      const eq = k => (q.get(k) || '').replace(/^eq\./, '')
+      if (m === 'POST') {
+        const row = Array.isArray(body) ? body[0] : body
+        const i = bookmarks.rows.findIndex(x => x.teleapo_item_id === row.teleapo_item_id && x.user_id === row.user_id)
+        const saved = { id: 'bm-' + bookmarks.rows.length, created_at: new Date().toISOString(), ...row }
+        if (i >= 0) bookmarks.rows[i] = { ...bookmarks.rows[i], ...row }
+        else bookmarks.rows.push(saved)
+        return json([saved])
+      }
+      if (m === 'PATCH') {
+        bookmarks.rows = bookmarks.rows.map(x => {
+          if (eq('user_id') && x.user_id !== eq('user_id')) return x
+          if (q.has('teleapo_item_id') && x.teleapo_item_id !== eq('teleapo_item_id')) return x
+          if (q.has('list_name') && (x.list_name || '') !== eq('list_name')) return x
+          return { ...x, ...body }
+        })
+        return json([])
+      }
+      if (m === 'DELETE') {
+        bookmarks.rows = bookmarks.rows.filter(x =>
+          !(x.teleapo_item_id === eq('teleapo_item_id') && x.user_id === eq('user_id')))
+        return json([])
+      }
+      return json([])
     }
     if (m === 'GET' && users && u.includes('/users')) {
       return json(users.map(x => ({ data: x })))

@@ -5,7 +5,7 @@ import { supabase, isSupabaseEnabled } from './lib/supabase'
 import { createSaveQueue, subscribeChanges } from './lib/saveQueue'
 import { startLiveSync } from './lib/liveSync'
 import { cacheGet, cacheSet, dropLegacyCache } from './lib/cache'
-import { fetchBookmarks, addBookmark, removeBookmark, updateBookmarkNote, subscribeBookmarks } from './lib/bookmarks'
+import { fetchBookmarks, addBookmark, removeBookmark, updateBookmarkNote, moveBookmark, renameBookmarkList, subscribeBookmarks, DEFAULT_LIST } from './lib/bookmarks'
 import SaveIndicator from './components/SaveIndicator'
 import UpdateBanner from './components/UpdateBanner'
 import PasswordChangeModal from './components/PasswordChangeModal'
@@ -566,22 +566,47 @@ export default function App() {
     setCurrentUser(null)
   }
 
-  const toggleBookmark = async (item, note = '') => {
+  /* listName を渡すとそのリストへ入れる／移す。渡さなければ付け外しの切り替え。 */
+  const toggleBookmark = async (item, note = '', listName = null) => {
     if (!currentUser?.authId) return
     const mine = bookmarks.find(b => b.teleapo_item_id === item.id && b.user_id === currentUser.authId)
+    const list = String(listName || '').trim()
+
+    // すでに入っていて、別のリストを指定された＝移動
+    if (mine && list && list !== (mine.list_name || DEFAULT_LIST)) {
+      setBookmarks(prev => prev.map(b => b === mine ? { ...b, list_name: list } : b))
+      try { await moveBookmark({ itemId: item.id, user: currentUser, listName: list }) }
+      catch (e) { window.alert(e.message) }
+      finally { fetchBookmarks().then(setBookmarks) }
+      return
+    }
+
     // 通信を待たずに画面を先に更新する（架電中に待たされないように）
     setBookmarks(prev => mine
       ? prev.filter(b => b !== mine)
       : [...prev, { id: 'tmp-' + item.id, teleapo_item_id: item.id, company_name: item.companyName,
-                    user_id: currentUser.authId, user_name: currentUser.name, note, created_at: new Date().toISOString() }])
+                    user_id: currentUser.authId, user_name: currentUser.name, note,
+                    list_name: list || DEFAULT_LIST, created_at: new Date().toISOString() }])
     try {
       if (mine) await removeBookmark({ itemId: item.id, user: currentUser })
-      else await addBookmark({ item, user: currentUser, note })
+      else await addBookmark({ item, user: currentUser, note, listName: list || DEFAULT_LIST })
     } catch (e) {
       window.alert(e.message)
     } finally {
       fetchBookmarks().then(setBookmarks)   // 正しい状態に揃え直す
     }
+  }
+
+  /* リスト名を変える。自分の同じ名前のブックマークをまとめて付け替える。 */
+  const renameBookmarks = async (from, to) => {
+    if (!currentUser?.authId) return
+    const next = String(to || '').trim()
+    if (!next || next === from) return
+    setBookmarks(prev => prev.map(b =>
+      b.user_id === currentUser.authId && (b.list_name || DEFAULT_LIST) === from ? { ...b, list_name: next } : b))
+    try { await renameBookmarkList({ user: currentUser, from, to: next }) }
+    catch (e) { window.alert(e.message) }
+    finally { fetchBookmarks().then(setBookmarks) }
   }
 
   const saveBookmarkNote = async (item, note) => {
@@ -789,6 +814,7 @@ export default function App() {
               bookmarks={bookmarks}
               onToggleBookmark={toggleBookmark}
               onSaveBookmarkNote={saveBookmarkNote}
+              onRenameBookmarkList={renameBookmarks}
               onPromote={promoteToProposal}
               proposals={proposals}
               currentUser={currentUser}

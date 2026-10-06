@@ -5,6 +5,11 @@ import { PREFECTURES, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLO
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
+import { DEFAULT_LIST as BOOKMARK_DEFAULT_LIST } from '../lib/bookmarks'
+
+/* 絞り込みの値で「誰の・どのリスト」を1つの文字列にするための区切り。
+   人が入力できない制御文字を使う。 */
+const BM_SEP = '\u001F'
 import { prefectureFromPhone } from '../lib/areaCode'
 import { historyKey } from '../lib/db'
 
@@ -21,23 +26,74 @@ function isKeepActive(item) {
          kept.getDate() === now.getDate()
 }
 
-function BookmarkButton({ marked, others = [], onClick, size = 'sm' }) {
+/* ブックマークの☆。
+   リストを複数持てる。まだ1つも無いうちは押すだけで既定のリストに入り、
+   1つ以上あるときは「どのリストに入れるか」を選ばせる。
+   1つのときに自動で入れてしまうと、2つ目のリストを作る入口が無くなる。 */
+function BookmarkButton({ marked, currentList = '', others = [], myLists = [], onPick, onRemove, size = 'sm' }) {
+  const [open, setOpen] = useState(false)
   const label = marked ? 'ブックマークを外す' : 'ブックマークに追加'
   const names = others.map(b => b.user_name).filter(Boolean)
+
+  const handle = e => {
+    e.stopPropagation()
+    if (!marked && myLists.length === 0) { onPick(BOOKMARK_DEFAULT_LIST); return }
+    setOpen(v => !v)
+  }
+  const newList = e => {
+    e.stopPropagation()
+    const name = window.prompt('新しいリストの名前', '')
+    if (!name || !name.trim()) return
+    onPick(name.trim())
+    setOpen(false)
+  }
+
   return (
-    <button
-      onClick={e => { e.stopPropagation(); onClick() }}
-      title={names.length ? `${label}（${names.join('・')}も登録）` : label}
-      aria-label={label}
-      className={`flex-shrink-0 rounded-md transition-colors ${size === 'lg' ? 'text-xl px-1.5 py-0.5' : 'text-base px-1 py-0.5'} ${
-        marked ? 'text-amber-500 hover:text-amber-600' : 'text-slate-300 hover:text-amber-400'
-      }`}
-    >
-      {marked ? '★' : '☆'}
-      {names.length > 0 && !marked && (
-        <span className="ml-0.5 align-middle text-[10px] font-medium text-amber-600">{names.length}</span>
+    <span className="relative flex-shrink-0" onClick={e => e.stopPropagation()}>
+      <button
+        onClick={handle}
+        title={names.length ? `${label}（${names.join('・')}も登録）` : label}
+        aria-label={label}
+        className={`rounded-md transition-colors ${size === 'lg' ? 'text-xl px-1.5 py-0.5' : 'text-base px-1 py-0.5'} ${
+          marked ? 'text-amber-500 hover:text-amber-600' : 'text-slate-300 hover:text-amber-400'
+        }`}
+      >
+        {marked ? '★' : '☆'}
+        {names.length > 0 && !marked && (
+          <span className="ml-0.5 align-middle text-[10px] font-medium text-amber-600">{names.length}</span>
+        )}
+      </button>
+      {marked && currentList && (
+        <span className="ml-1 align-middle text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
+          {currentList}
+        </span>
       )}
-    </button>
+      {open && (
+        <>
+          <span className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setOpen(false) }} />
+          <span className="absolute left-0 top-full mt-1 z-50 block w-52 bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-left">
+            <span className="block px-3 py-1 text-[10px] font-bold text-slate-400">リストを選ぶ</span>
+            {myLists.map(l => (
+              <button key={l} onClick={e => { e.stopPropagation(); onPick(l); setOpen(false) }}
+                className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 ${
+                  l === currentList ? 'font-bold text-amber-700' : 'text-slate-700'}`}>
+                {l === currentList ? '★ ' : '　'}{l}
+              </button>
+            ))}
+            <button onClick={newList}
+              className="block w-full text-left px-3 py-1.5 text-xs text-[#2d6a9e] hover:bg-slate-50 border-t border-slate-100">
+              ＋ 新しいリスト
+            </button>
+            {marked && (
+              <button onClick={e => { e.stopPropagation(); onRemove(); setOpen(false) }}
+                className="block w-full text-left px-3 py-1.5 text-xs text-[#be123c] hover:bg-rose-50 border-t border-slate-100">
+                ブックマークを外す
+              </button>
+            )}
+          </span>
+        </>
+      )}
+    </span>
   )
 }
 
@@ -720,7 +776,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
 }
 
 /* ───────────────────── 検索画面 ───────────────────── */
-function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, callerOptions = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkCount = 0 }) {
+function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, stats, salesReps, callerOptions = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, allListSources = [], allPrefectures = [], onAddNew, onCsvImport, bookmarkOwners = [], myBookmarkLists = [], onRenameBookmarkList, myBookmarkCount = 0 }) {
   const setFilter = (key, value) => setFilters(prev => ({ ...prev, [key]: value }))
 
   const activeCount = [
@@ -854,30 +910,49 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">ブックマーク</p>
           <div className="flex flex-wrap gap-2">
-            <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
-              <input
-                type="checkbox"
-                checked={(filters.bookmarkedBy || []).includes('__me__')}
-                onChange={e => setFilter('bookmarkedBy',
-                  e.target.checked ? [...(filters.bookmarkedBy || []), '__me__']
-                                   : (filters.bookmarkedBy || []).filter(v => v !== '__me__'))}
-                className="w-4 h-4 rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf]"
-              />
-              <span className="text-amber-500">★</span>
-              自分のブックマーク
-              <span className="text-xs text-slate-400">({myBookmarkCount})</span>
-            </label>
+            {myBookmarkLists.map(l => {
+              const value = '__me__' + BM_SEP + l.name
+              return (
+                <span key={l.name} className="inline-flex items-center rounded-lg border border-slate-300 hover:bg-slate-50">
+                  <label className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={(filters.bookmarkedBy || []).includes(value)}
+                      onChange={e => setFilter('bookmarkedBy',
+                        e.target.checked ? [...(filters.bookmarkedBy || []), value]
+                                         : (filters.bookmarkedBy || []).filter(v => v !== value))}
+                      className="w-4 h-4 rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf]"
+                    />
+                    <span className="text-amber-500">★</span>
+                    {l.name}
+                    <span className="text-xs text-slate-400">({l.count})</span>
+                  </label>
+                  {/* 自分のリストだけ名前を変えられる */}
+                  <button
+                    onClick={() => {
+                      const next = window.prompt('リスト名を変更', l.name)
+                      if (next && next.trim() && next.trim() !== l.name) {
+                        onRenameBookmarkList && onRenameBookmarkList(l.name, next.trim())
+                        setFilter('bookmarkedBy', (filters.bookmarkedBy || [])
+                          .map(v => v === value ? '__me__' + BM_SEP + next.trim() : v))
+                      }
+                    }}
+                    title="リスト名を変更"
+                    className="px-2 py-1.5 text-xs text-slate-400 hover:text-[#2d6a9e]">✎</button>
+                </span>
+              )
+            })}
             {bookmarkOwners.map(o => (
-              <label key={o.name} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
+              <label key={o.key} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 text-sm cursor-pointer hover:bg-slate-50">
                 <input
                   type="checkbox"
-                  checked={(filters.bookmarkedBy || []).includes(o.name)}
+                  checked={(filters.bookmarkedBy || []).includes(o.key)}
                   onChange={e => setFilter('bookmarkedBy',
-                    e.target.checked ? [...(filters.bookmarkedBy || []), o.name]
-                                     : (filters.bookmarkedBy || []).filter(v => v !== o.name))}
+                    e.target.checked ? [...(filters.bookmarkedBy || []), o.key]
+                                     : (filters.bookmarkedBy || []).filter(v => v !== o.key))}
                   className="w-4 h-4 rounded border-slate-300 text-[#2d6a9e] focus:ring-[#6e9bbf]"
                 />
-                {o.name}のブックマーク
+                {o.name}／{o.list}
                 <span className="text-xs text-slate-400">({o.count})</span>
               </label>
             ))}
@@ -1112,7 +1187,7 @@ function EmailSendModal({ selectedItems, settings, onClose, onSend }) {
 
 /* ───────────────────── 結果一覧画面 ───────────────────── */
 function ResultsPage({ filtered, items, filters, setFilters, searchText, setSearchText, onBack, onSelectItem, downloadLeads = [], onUpdateItem, onPromote, currentUser, salesReps, callerOptions = [], allPrefectures = [], callResultOptions = CALL_RESULT_FILTER_OPTIONS, settings = {}, allListSources = [], onAddNew,
-  bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), onToggleBookmark }) {
+  bookmarks = [], myBookmarkIds = new Set(), bookmarksByItem = new Map(), myBookmarkList = new Map(), myBookmarkLists = [], onToggleBookmark }) {
   // 一度に描画する件数。9,647件を全部描くと DOM が28万ノードになり、
   // 表示に6秒かかってスクロールも重くなる。必要な分だけ描いて継ぎ足す。
   const PAGE_SIZE = 50
@@ -1268,7 +1343,11 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
     filterBadges.push({ label, onRemove: () => setFilter('callCount', '') })
   }
   if ((filters.bookmarkedBy || []).length) filterBadges.push({
-    label: 'ブックマーク: ' + filters.bookmarkedBy.map(w => w === '__me__' ? '自分' : w).join(', '),
+    label: 'ブックマーク: ' + filters.bookmarkedBy.map(v => {
+      const [w, list] = String(v).split(BM_SEP)
+      const who = w === '__me__' ? '自分' : w
+      return list ? `${who}／${list}` : who
+    }).join(', '),
     onRemove: () => setFilter('bookmarkedBy', []) })
   if (filters.kept === 'true') filterBadges.push({ label: 'Keep中', onRemove: () => setFilter('kept', '') })
   if (filters.kept === 'false') filterBadges.push({ label: 'Keep以外', onRemove: () => setFilter('kept', '') })
@@ -1587,8 +1666,11 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                     カード下半分は元から伝播を止めており、押せるのはこの行だけ。 */}
                 <BookmarkButton
                   marked={myBookmarkIds.has(item.id)}
+                  currentList={myBookmarkList.get(item.id) || ''}
+                  myLists={myBookmarkLists.map(l => l.name)}
                   others={(bookmarksByItem.get(item.id) || []).filter(b => b.user_id !== currentUser?.authId)}
-                  onClick={() => onToggleBookmark && onToggleBookmark(item)}
+                  onPick={listName => onToggleBookmark && onToggleBookmark(item, '', listName)}
+                  onRemove={() => onToggleBookmark && onToggleBookmark(item)}
                 />
                 <button
                   onClick={e => { e.stopPropagation(); onSelectItem(item) }}
@@ -1946,19 +2028,44 @@ function DownloadLeads({ leads = [], teleapoItems = [], proposedNames = new Set(
 
 /* ───────────────────── メインコンポーネント ───────────────────── */
 export default function TeleapoList({ items, setItems, onPromote, proposals = [], currentUser, users = [], downloadLeads = [], settings = {}, initialFilter, onFilterConsumed,
-  bookmarks = [], onToggleBookmark, onSaveBookmarkNote }) {
+  bookmarks = [], onToggleBookmark, onSaveBookmarkNote, onRenameBookmarkList }) {
   // 自分がブックマークしている企業のid
   const myBookmarkIds = useMemo(
     () => new Set(bookmarks.filter(b => b.user_id === currentUser?.authId).map(b => b.teleapo_item_id)),
     [bookmarks, currentUser?.authId])
   // 「梶田ブックマーク」「美藤ブックマーク」として並べるための一覧（自分以外）
+  /* 他の人のブックマークは「誰の・どのリスト」単位で見せる */
   const bookmarkOwners = useMemo(() => {
     const m = new Map()
     for (const b of bookmarks) {
       if (b.user_id === currentUser?.authId) continue
-      m.set(b.user_name, (m.get(b.user_name) || 0) + 1)
+      const key = `${b.user_name}${BM_SEP}${b.list_name || BOOKMARK_DEFAULT_LIST}`
+      m.set(key, (m.get(key) || 0) + 1)
     }
-    return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count)
+    return [...m.entries()]
+      .map(([key, count]) => ({ key, name: key.split(BM_SEP)[0], list: key.split(BM_SEP)[1], count }))
+      .sort((a, b) => b.count - a.count)
+  }, [bookmarks, currentUser?.authId])
+
+  /* 自分のリスト（名前と件数） */
+  const myBookmarkLists = useMemo(() => {
+    const m = new Map()
+    for (const b of bookmarks) {
+      if (b.user_id !== currentUser?.authId) continue
+      const l = b.list_name || BOOKMARK_DEFAULT_LIST
+      m.set(l, (m.get(l) || 0) + 1)
+    }
+    // よく使うリストほど上に出す（選ぶ手数を減らすため）
+    return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+  }, [bookmarks, currentUser?.authId])
+
+  /* 企業id → 自分が入れているリスト名 */
+  const myBookmarkList = useMemo(() => {
+    const m = new Map()
+    for (const b of bookmarks) {
+      if (b.user_id === currentUser?.authId) m.set(b.teleapo_item_id, b.list_name || BOOKMARK_DEFAULT_LIST)
+    }
+    return m
   }, [bookmarks, currentUser?.authId])
 
   // 企業id → ブックマークしている人たち（誰の分でも見えるようにするため）
@@ -2120,9 +2227,14 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       // ブックマーク：自分の分、または指定した人の分
       if ((filters.bookmarkedBy || []).length) {
         const bs = bookmarksByItem.get(item.id) || []
-        const ok = filters.bookmarkedBy.some(who =>
-          who === '__me__' ? bs.some(b => b.user_id === currentUser?.authId)
-                           : bs.some(b => b.user_name === who))
+        const ok = filters.bookmarkedBy.some(who => {
+          // 値は「誰<区切り>リスト名」。区切りが無い古い値は人だけで判定する
+          const [w, list] = String(who).split(BM_SEP)
+          const mine = w === '__me__'
+          return bs.some(b =>
+            (mine ? b.user_id === currentUser?.authId : b.user_name === w) &&
+            (!list || (b.list_name || BOOKMARK_DEFAULT_LIST) === list))
+        })
         if (!ok) return false
       }
       // Keep履歴フィルター
@@ -2363,6 +2475,8 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       {subTab === 'list' && page === 'search' && (
         <SearchPage
           bookmarkOwners={bookmarkOwners}
+          myBookmarkLists={myBookmarkLists}
+          onRenameBookmarkList={onRenameBookmarkList}
           myBookmarkCount={myBookmarkIds.size}
           filters={filters}
           setFilters={setFilters}
@@ -2385,6 +2499,8 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           bookmarks={bookmarks}
           myBookmarkIds={myBookmarkIds}
           bookmarksByItem={bookmarksByItem}
+          myBookmarkList={myBookmarkList}
+          myBookmarkLists={myBookmarkLists}
           onToggleBookmark={onToggleBookmark}
           filtered={filtered}
           items={items}
