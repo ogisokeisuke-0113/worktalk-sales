@@ -1,9 +1,14 @@
 /* 架電結果の絞り込み。
-   「未架電（履歴なし）」は結果の値ではなく「履歴が0件」なので、
-   他の結果と OR で組み合わせられること。2026-09-17 にここが壊れて全件表示になった。 */
+   ・絞り込みは「最後にどうなったか」で判定する。
+     2026-10-07 の報告：「担当者不在」で絞ると、その後に断られた企業まで出てきた。
+   ・「未架電（履歴なし）」は結果の値ではなく「履歴が0件」なので、
+     他の結果と OR で組み合わせられること。2026-09-17 にここが壊れて全件表示になった。 */
 import { open, company, call, listedCompanies, selectOptions, makeReporter } from './harness.mjs'
 
 const h = (result) => [call('梶田 祐守', result, '2026-09-10T01:00:00.000Z')]
+/* 履歴を日付順に積む（最後が最新） */
+const hs = (...results) => results.map((r, i) =>
+  call('梶田 祐守', r, `2026-09-${String(10 + i).padStart(2, '0')}T01:00:00.000Z`))
 const ITEMS = [
   company('a', 'A_未架電'),
   company('b', 'B_不在', { status: '架電済', callHistory: h('担当者不在') }),
@@ -13,6 +18,10 @@ const ITEMS = [
   company('f', 'F_未架電2'),
   company('g', 'G_復元', { status: '架電済', callHistory: h('（復元・要確認）') }),
   company('i', 'I_旧不在', { status: '架電済', callHistory: h('不在') }),
+  // 不在のあとに断られた企業。「担当者不在」で絞っても出てはいけない（今回の報告）
+  company('j', 'J_不在のあと断り', { status: '架電済', callHistory: hs('担当者不在', '断り') }),
+  // 断られたあとに不在。最終結果は不在なので「担当者不在」で出る
+  company('k', 'K_断りのあと不在', { status: '架電済', callHistory: hs('断り', '担当者不在') }),
 ]
 
 const { page, errs, close } = await open('dist', ITEMS)
@@ -34,10 +43,16 @@ let got = await search(['未架電（履歴なし）'])
 check('未架電のみ', eq(got, ['A_未架電', 'F_未架電2']), JSON.stringify(got))
 
 got = await search(['担当者不在', '不通'])
-check('担当者不在＋不通', eq(got, ['B_不在', 'C_不通']), JSON.stringify(got))
+check('担当者不在＋不通', eq(got, ['B_不在', 'C_不通', 'K_断りのあと不在']), JSON.stringify(got))
+
+got = await search(['担当者不在'])
+check('不在のあと断られた企業は出ない（報告の件）', !got.includes('J_不在のあと断り'), JSON.stringify(got))
+
+got = await search(['断り'])
+check('最終結果が断りの企業が出る', eq(got, ['D_断り', 'J_不在のあと断り']), JSON.stringify(got))
 
 got = await search(['未架電（履歴なし）', '担当者不在', '不通'])
-check('未架電＋担当者不在＋不通', eq(got, ['A_未架電', 'B_不在', 'C_不通', 'F_未架電2']), JSON.stringify(got))
+check('未架電＋担当者不在＋不通', eq(got, ['A_未架電', 'B_不在', 'C_不通', 'F_未架電2', 'K_断りのあと不在']), JSON.stringify(got))
 
 got = await search(['（復元・要確認）'])
 check('復元データのみ', eq(got, ['G_復元']), JSON.stringify(got))
@@ -46,7 +61,7 @@ got = await search(['不在'])
 check('旧表記「不在」は担当者不在と別物', eq(got, ['I_旧不在']), JSON.stringify(got))
 
 got = await search(['（復元・要確認）', '担当者不在'])
-check('復元＋担当者不在', eq(got, ['B_不在', 'G_復元']), JSON.stringify(got))
+check('復元＋担当者不在', eq(got, ['B_不在', 'G_復元', 'K_断りのあと不在']), JSON.stringify(got))
 
 done(errs)
 await close()

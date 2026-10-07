@@ -1041,7 +1041,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">架電結果</label>
+              <label className="block text-xs font-medium text-slate-600 mb-1">架電結果（最新のみ）</label>
               <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={callResultOptions} placeholder="すべて" fullWidth />
             </div>
             <div>
@@ -1584,7 +1584,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-slate-500 mb-1">架電結果（累積履歴に含む）</label>
+                <label className="block text-xs font-medium text-slate-500 mb-1">架電結果（最新のみ）</label>
                 <MultiSelect selected={filters.callResult} onChange={v => setFilter('callResult', v)} options={callResultOptions} placeholder="すべて" fullWidth />
               </div>
               {allListSources.length > 0 && (
@@ -2276,20 +2276,24 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
           const wantResults = hasResultFilter ? filters.callResult.filter(v => v !== CALL_RESULT_NONE) : []
           // 「未架電」条件：日付フィルターなし かつ 履歴が0件
           const hitNone = wantNone && !hasDateFilter && history.length === 0
-          // 通常の結果条件：エントリが日付条件（あれば）AND 結果条件（あれば）を同時に満たすか
-          // 日付も結果も指定が無ければ、この条件では何も絞らない（＝成立させない）。
-          // ここを some(...) のままにすると、履歴が1件でもある企業が全部通ってしまい
-          // 「未架電（履歴なし）」だけを選んだときに全件表示になる。
-          const hitEntry = (hasDateFilter || wantResults.length > 0) && history.some(c => {
-            if (hasDateFilter) {
-              if (!c.date) return false
-              const d = new Date(c.date)
-              if (from && d < from) return false
-              if (to && d > to) return false
-            }
-            if (wantResults.length > 0 && !wantResults.includes(c.result)) return false
+          /* 架電結果は「最後にどうなったか」で絞る。
+             以前は履歴のどれか1件でも一致すれば通していたため、
+             「担当者不在」で絞っても、その後に断られた企業まで出てきていた
+             （2026-10-07 時点の本番で128社）。
+             日付を併せて指定したときは、その期間内の最後の架電で判定する。
+             日付も結果も指定が無ければ、この条件では何も絞らない（＝成立させない）。 */
+          const inRange = c => {
+            if (!hasDateFilter) return true
+            if (!c.date) return false
+            const d = new Date(c.date)
+            if (from && d < from) return false
+            if (to && d > to) return false
             return true
-          })
+          }
+          // 一覧カードの「直近架電」と同じ選び方にする（見えているものと絞り込みを一致させる）
+          const last = latestCall(history.filter(inRange))
+          const hitEntry = (hasDateFilter || wantResults.length > 0) && !!last &&
+            (wantResults.length === 0 || wantResults.includes(last.result))
           if (!hitNone && !hitEntry) return false
         }
       }
