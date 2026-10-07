@@ -20,7 +20,7 @@ export const company = (id, companyName, over = {}) => ({
   nextCallDate: '', emailStatus: '未送信', appoDate: null, ...over,
 })
 
-export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null, bookmarks = null } = {}) {
+export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null, bookmarks = null, appSettings = null } = {}) {
   if (!dist || !fs.existsSync(path.join(dist, 'index.html'))) {
     throw new Error(`dist が見つかりません: ${dist}`)
   }
@@ -76,6 +76,21 @@ export async function open(dist, items, { user = 'テスト太郎', failWrites =
       const off = Number(q.get('offset') || 0)
       const lim = Number(q.get('limit') || 1000)
       return json(items.slice(off, off + lim).map(i => ({ data: i })))
+    }
+    if (appSettings && u.includes('/app_settings')) {
+      if (m === 'GET') {
+        const id = (new URL(u).searchParams.get('id') || '').replace(/^eq\./, '')
+        const hit = appSettings.rows.find(r => r.id === id)
+        return json(hit ? [{ data: hit.data }] : [])
+      }
+      let body = null
+      try { body = r.request().postDataJSON() } catch { /* noop */ }
+      for (const row of (Array.isArray(body) ? body : [body]).filter(Boolean)) {
+        const i = appSettings.rows.findIndex(x => x.id === row.id)
+        if (i >= 0) appSettings.rows[i] = { ...appSettings.rows[i], ...row }
+        else appSettings.rows.push(row)
+      }
+      return json([])
     }
     if (bookmarks && u.includes('/teleapo_bookmarks')) {
       // テスト内でブックマークの台帳を持ち、追加・移動・名前変更をそのまま反映する

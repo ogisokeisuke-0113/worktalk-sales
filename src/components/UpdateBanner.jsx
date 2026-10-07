@@ -87,7 +87,9 @@ export default function UpdateBanner() {
   if (!available) return null
 
   return (
-    <div role="status" className="fixed top-0 inset-x-0 z-[60] bg-[#1a5285] text-white shadow-lg">
+    /* fixed にすると画面上部のタブやボタンに覆いかぶさって押せなくなる。
+       sticky なら場所を取って本体を下げるので、操作を邪魔しない。 */
+    <div role="status" className="sticky top-0 z-[60] bg-[#1a5285] text-white shadow-lg">
       <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center gap-3 text-sm">
         <span className="font-bold">新しい版があります</span>
         <span className="text-white/80">

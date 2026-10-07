@@ -9,10 +9,13 @@
  * 実際、修正を配った後も再読み込みするまで直らない状態が続いていた。
  */
 
-const CHECK_INTERVAL = 3 * 60 * 1000   // 3分おき
+import { announceVersion, isOutdated, BUILD_ID } from './appVersion'
+
+const CHECK_INTERVAL = 3 * 60 * 1000   // index.html を見に行く間隔（保険）
+const VERSION_INTERVAL = 30 * 1000     // Supabase 側の版を見る間隔（こちらが本命）
 
 /** いま読み込んでいるエントリのファイル名 */
-function currentAsset() {
+export function currentAsset() {
   try {
     const el = document.querySelector('script[type="module"][src*="/assets/index-"]')
     const src = el?.getAttribute('src') || ''
@@ -40,25 +43,42 @@ export function watchAppUpdate(onUpdate, { interval = CHECK_INTERVAL } = {}) {
   if (!mine) return () => {}   // 開発サーバーなど、ハッシュ付きでない場合は何もしない
   let stopped = false
 
-  const check = async () => {
+  const fire = next => { stopped = true; onUpdate(next || mine) }
+
+  /* 本命：自分の版を知らせ、他にもっと新しい版が出ていないか見る。
+     配信経路（最大10分キャッシュ）を通らないので待ち時間が無い。 */
+  const checkVersion = async () => {
+    if (stopped || !BUILD_ID) return
+    try {
+      if (await isOutdated()) { fire(null); return }
+      await announceVersion(mine)
+    } catch { /* 次回に回す */ }
+  }
+
+  /* 保険：配信中の index.html を見て、別のファイル名になっていないか確かめる。
+     誰も新しい版を開いていない場合は、こちらだけが頼りになる。 */
+  const checkDeployed = async () => {
     if (stopped || document.visibilityState === 'hidden') return
     try {
       const next = await deployedAsset()
       if (!next || next === mine) return
-      stopped = true
-      onUpdate(next)
+      fire(next)
     } catch { /* 通信できないときは次回に回す */ }
   }
 
-  const timer = setInterval(check, interval)
-  // 画面に戻ったときは、待たずに見に行く（スリープ明けが一番古い）
-  const onVisible = () => { if (document.visibilityState === 'visible') check() }
+  const t1 = setInterval(checkDeployed, interval)
+  const t2 = setInterval(checkVersion, VERSION_INTERVAL)
+  const onVisible = () => {
+    if (document.visibilityState !== 'visible') return
+    checkVersion(); checkDeployed()
+  }
   document.addEventListener('visibilitychange', onVisible)
-  setTimeout(check, 10000)
+  setTimeout(checkVersion, 2000)
+  setTimeout(checkDeployed, 10000)
 
   return () => {
     stopped = true
-    clearInterval(timer)
+    clearInterval(t1); clearInterval(t2)
     document.removeEventListener('visibilitychange', onVisible)
   }
 }
