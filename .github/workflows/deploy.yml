@@ -82,6 +82,11 @@ jobs:
       - name: 回帰テスト
         run: npm run test:e2e
 
+      # 配信後は tools/announce-version.mjs を実行して、開きっぱなしの画面へ
+      # 「新しい版が出た」ことを直接知らせる。GitHub Pages は index.html を
+      # 10分キャッシュするため、それを待つと気づくまで最大10分かかる。
+      # ここで自動化しないのは、公開リポジトリにデータベースの全権限を持つ鍵を
+      # 置きたくないため。配信した人が手元で1回実行する運用にしている。
       - name: gh-pages へ配信
         run: |
           git config user.name  "github-actions[bot]"
