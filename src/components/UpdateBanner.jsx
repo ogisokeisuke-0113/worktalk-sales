@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { watchAppUpdate, markReloadTarget, canAutoReload, clearReloadGuard } from '../lib/appUpdate'
 
-/* 予告してから再読み込みするまでの秒数 */
-const GRACE_SEC = 30
 /* 入力中でも、これだけ経ったら更新する */
 const MAX_WAIT_MS = 5 * 60 * 1000
 
@@ -40,7 +38,6 @@ async function settleQueues() {
 
 export default function UpdateBanner() {
   const [available, setAvailable] = useState(false)
-  const [left, setLeft] = useState(GRACE_SEC)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [manualOnly, setManualOnly] = useState(false)
@@ -69,18 +66,16 @@ export default function UpdateBanner() {
     setTimeout(() => window.location.reload(), clean ? 200 : 900)
   }
 
+  /* 新しい版に気づいたらすぐ更新する。待たせる理由が無い。
+     ただし入力の途中だけは待つ。ここで再読み込みすると書きかけが消える。 */
   useEffect(() => {
     if (!available || busy || manualOnly) return
-    const t = setInterval(() => {
-      setLeft(prev => {
-        const next = prev - 1
-        if (next > 0) return next
-        // 入力中は待つ。ただし待ちすぎないよう上限を設ける。
-        if (isEditing() && Date.now() - since.current < MAX_WAIT_MS) return 5
-        reload()
-        return 0
-      })
-    }, 1000)
+    const tick = () => {
+      if (isEditing() && Date.now() - since.current < MAX_WAIT_MS) return
+      reload()
+    }
+    tick()
+    const t = setInterval(tick, 1000)
     return () => clearInterval(t)
   }, [available, busy, manualOnly])
 
@@ -97,7 +92,7 @@ export default function UpdateBanner() {
             ? '「今すぐ更新」を押してください'
             : isEditing()
               ? '入力が終わったら自動で更新します'
-              : `${left}秒後に自動で更新します`}
+              : '最新版に更新しています…'}
         </span>
         <button
           onClick={reload}

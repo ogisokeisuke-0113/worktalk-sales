@@ -20,14 +20,9 @@ const allErrs = []
   let reloaded = false
   page.on('framenavigated', f => { if (f === page.mainFrame()) reloaded = true })
 
-  await page.waitForTimeout(12000)   // 初回チェックは10秒後
-  const banner = page.getByRole('status').filter({ hasText: '新しい版があります' })
-  check('予告バナーが出る', (await banner.count()) > 0)
-  check('「今すぐ更新」がある', (await banner.getByRole('button', { name: /今すぐ更新/ }).count()) > 0)
-
-  await banner.getByRole('button', { name: /今すぐ更新/ }).click()
-  await page.waitForTimeout(3000)
-  check('再読み込みされる', reloaded)
+  // 気づいたら待たずに再読み込みする
+  await page.waitForTimeout(16000)
+  check('待たずに自動で再読み込みされる', reloaded)
   allErrs.push(...errs)
   await close()
 }
@@ -35,6 +30,8 @@ const allErrs = []
 /* ② 未送信の架電記録がある状態で更新 → 先に送信してから再読み込み */
 {
   const { page, writes, errs, close } = await open('dist', ITEMS)
+  let reloaded2 = false
+  page.on('framenavigated', f => { if (f === page.mainFrame()) reloaded2 = true })
   await page.route('**/worktalk-sales/?v=*', r => r.fulfill({
     status: 200, contentType: 'text/html',
     body: '<!doctype html><script type="module" src="/worktalk-sales/assets/index-NEWBUILD.js"></script>',
@@ -55,8 +52,8 @@ const allErrs = []
     .map(x => x.data || x).filter(d => d && d.companyName === 'A_更新中').pop()
   check('記録がサーバーに送られている', !!sent && (sent.callHistory || []).some(c => c.result === '担当者接触'),
     sent ? `${(sent.callHistory || []).length}件` : 'なし')
-  const banner = page.getByRole('status').filter({ hasText: '新しい版があります' })
-  check('記録後も予告が出ている', (await banner.count()) > 0)
+  // 送り切ってから再読み込みする（記録が落ちないこと）
+  check('送信を終えてから再読み込みされる', reloaded2, reloaded2 ? 'OK' : '再読み込みされていない')
   allErrs.push(...errs)
   await close()
 }
