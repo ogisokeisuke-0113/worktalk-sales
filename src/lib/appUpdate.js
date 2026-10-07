@@ -9,7 +9,7 @@
  * 実際、修正を配った後も再読み込みするまで直らない状態が続いていた。
  */
 
-import { announceVersion, isOutdated, BUILD_ID } from './appVersion'
+import { announceVersion, outdatedVersion, BUILD_ID } from './appVersion'
 
 const CHECK_INTERVAL = 3 * 60 * 1000   // index.html を見に行く間隔（保険）
 const VERSION_INTERVAL = 30 * 1000     // Supabase 側の版を見る間隔（こちらが本命）
@@ -50,7 +50,13 @@ export function watchAppUpdate(onUpdate, { interval = CHECK_INTERVAL } = {}) {
   const checkVersion = async () => {
     if (stopped || !BUILD_ID) return
     try {
-      if (await isOutdated()) { fire(null); return }
+      const newer = await outdatedVersion()
+      if (newer) {
+        // 目指す版を渡す。自分のファイル名を渡すと、再読み込み後に
+        // 「目的地に着いた」と判定されて歯止めが解除され、往復が止まらない。
+        fire(newer.asset || `build-${newer.buildId}`)
+        return
+      }
       await announceVersion(mine)
     } catch { /* 次回に回す */ }
   }

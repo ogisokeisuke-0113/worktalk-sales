@@ -47,9 +47,12 @@ export async function announceVersion(asset) {
   }
 }
 
-/* 自分より新しい版が出ていれば true */
-export async function isOutdated() {
-  if (!BUILD_ID) return false
+/* 自分より新しい版が出ていれば、その版を返す。無ければ null。
+   呼び出し側が「どの版を目指して再読み込みしたか」を記録できるよう、
+   true/false ではなく中身を返す。これが無いと、登録がおかしいときに
+   再読み込みが無限に往復する。 */
+export async function outdatedVersion() {
+  if (!BUILD_ID) return null
   const cur = await readPublishedVersion()
-  return !!cur && cur.buildId > BUILD_ID
+  return cur && cur.buildId > BUILD_ID ? cur : null
 }

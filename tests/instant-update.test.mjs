@@ -23,11 +23,17 @@ const allErrs = []
 {
   const store = { rows: [{ id: 'app_version', data: { buildId: 9999999999, asset: 'index-NEWBUILD.js' } }] }
   const { page, errs, close } = await open('dist', [company('a', 'A社')], { appSettings: store })
-  await page.waitForTimeout(8000)
-  check('新しい版に気づいてバナーを出す',
-    (await page.getByText('新しい版があります').count()) > 0)
+  let reloaded = 0
+  page.on('framenavigated', f => { if (f === page.mainFrame()) reloaded++ })
+  await page.waitForTimeout(10000)
+  check('新しい版に気づいて自動で再読み込みする', reloaded > 0, `${reloaded}回`)
   check('古い版で上書きしない', Number(store.rows[0].data.buildId) === 9999999999,
     String(store.rows[0].data.buildId))
+  // 登録がおかしくて新しい版が実在しない場合、往復し続けてはいけない
+  await page.waitForTimeout(12000)
+  check('目的の版が来なければ往復を止める', reloaded <= 3, `${reloaded}回`)
+  check('止まったら手動の案内に変わる',
+    (await page.getByText('「今すぐ更新」を押してください').count()) > 0)
   allErrs.push(...errs)
   await close()
 }
