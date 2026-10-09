@@ -22,6 +22,10 @@ async function upsertRows(table, items, { withTimestamp = true } = {}) {
 // 履歴エントリの同一判定。id があればそれを使う。
 // 「date|caller」だけで判定すると、同じ人が同じ日に同じ会社へ2回架電したとき
 // 2件目が重複扱いで消えてしまう。
+/* 状態の進み具合。古い画面の保存で後ろ向きに戻さないために使う。
+   折り返し待ちは「架電したあと」なので架電済と同じ扱いにする。 */
+const STATUS_RANK = { '未架電': 0, '架電済': 1, '折り返し待ち': 1, 'アポ確定': 2 }
+
 export const historyKey = c => (c && c.id ? `#${c.id}` : `${c && c.date}|${c && c.caller}`)
 
 // call_logs の1行を組み立てる。
@@ -99,15 +103,17 @@ async function upsertTeleapoWithMerge(items) {
       callHistory = callHistory.slice().sort((a, b) => String(a?.date).localeCompare(String(b?.date)))
     }
 
-    /* 古い画面が「アポ確定」を取り消してしまうのを防ぐ。
+    /* 古い画面が状態を巻き戻してしまうのを防ぐ。
        2026-10-08 に実際に起きた：05:44 にアポ獲得で自動昇格したのに、
        08:09 に古い内容を持った画面が保存して 架電済 へ戻していた。
-       架電履歴はマージで守られていたので、記録だけ残って状態だけ巻き戻る形になる。
-       取り消したいときは、その画面を読み込み直してから操作すれば通る。 */
+       同じ保存で「架電済 → 未架電」に戻った企業もある。
+       架電履歴はマージで守られているので、記録だけ残って状態だけ巻き戻る形になる。
+       戻したいときは、その画面を読み込み直してから操作すれば通る。 */
     let status = item.status
-    if (stale && serverItem?.status === 'アポ確定' && status !== 'アポ確定') {
-      console.warn(`[db] 古い内容のため「アポ確定」を保ちます: ${item.companyName || item.id}`)
-      status = 'アポ確定'
+    if (stale && serverItem && STATUS_RANK[serverItem.status] > STATUS_RANK[status]) {
+      console.warn(`[db] 古い内容のため状態を保ちます: ${item.companyName || item.id} ` +
+        `(${status} → ${serverItem.status})`)
+      status = serverItem.status
     }
 
     return {

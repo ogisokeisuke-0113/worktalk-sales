@@ -40,5 +40,27 @@ check('サーバー側のアポ獲得が残る',
 check('自分が入れた記録も残る',
   (row?.callHistory || []).some(c => c.result === '不通'))
 
+/* 架電済 → 未架電 の巻き戻りも防ぐ（同じ保存で実際に2社起きていた） */
+{
+  const old = [company('b', 'B_古い画面2', { status: '未架電', callHistory: [] })]
+  const newer = JSON.parse(JSON.stringify(old[0]))
+  newer.status = '架電済'
+  newer.callHistory.push(call('梶田 祐守', '受付ブロック', '2026-10-08T05:00:00.000Z'))
+
+  const { page: p2, writes: w2, errs: e2, close: c2 } =
+    await open('dist', old, { serverSide: { b: newer } })
+  await p2.getByRole('button', { name: '検索する' }).first().click()
+  await p2.waitForTimeout(900)
+  const card2 = p2.locator('div.bg-white.rounded-xl.border').filter({ hasText: 'B_古い画面2' }).first()
+  await card2.getByRole('button', { name: /Keep$/ }).click()   // 関係のない操作で保存を起こす
+  await p2.waitForTimeout(3500)
+  const row2 = w2.filter(w => w.table === 'teleapo_items')
+    .flatMap(w => Array.isArray(w.body) ? w.body : [w.body]).filter(Boolean)
+    .map(x => x.data || x).filter(d => d && d.companyName === 'B_古い画面2').pop()
+  check('架電済が未架電に戻らない', row2?.status === '架電済', String(row2?.status))
+  errs.push(...e2)
+  await c2()
+}
+
 done(errs)
 await close()
