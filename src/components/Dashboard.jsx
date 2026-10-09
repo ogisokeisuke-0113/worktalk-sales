@@ -12,6 +12,14 @@ const NON_TELEAPO_RELATIONSHIPS = RELATIONSHIPS.filter(r => r !== '新規' && r 
 /* テレアポのダッシュボードは「テレアポで取れたアポ」だけを数える。
    ステータスだけ手でアポ確定にした企業（架電記録にアポ獲得が無いもの）は含めない。
    ※提案リスト側の p.status === 'アポ確定' は商談の進捗ステージなので別物。 */
+/* Keepは当日限り。データを書き換えずに日付で判断する
+   （書き換えると、朝いちばんに大量保存が走って巻き添えが出る）。 */
+const isKeepActive = item => {
+  if (!item?.isKept || !item?.keptAt) return false
+  const k = new Date(item.keptAt), n = new Date()
+  return k.getFullYear() === n.getFullYear() && k.getMonth() === n.getMonth() && k.getDate() === n.getDate()
+}
+
 const teleapoWonCall = item =>
   (item?.callHistory || []).find(c => c && c.result === 'アポ獲得') || null
 const hasTeleapoAppo = item => !!teleapoWonCall(item)
@@ -621,7 +629,7 @@ export default function Dashboard({ proposals, teleapoItems = [], onNavigate, on
     const total = teleapoFiltered.length
     const allCalls = teleapoCallFiltered.flatMap(i => i.callHistory || [])
     const totalCalls = allCalls.length
-    const kept = teleapoFiltered.filter(i => i.isKept).length
+    const kept = teleapoFiltered.filter(isKeepActive).length
     const called = teleapoCallFiltered.filter(i => (i.callHistory || []).length > 0).length
     const uncalled = total - called
     const appoConfirmed = teleapoFiltered.filter(i => {

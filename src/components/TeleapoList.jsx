@@ -2094,20 +2094,15 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   }, [page, subTab])
   const [showModal, setShowModal] = useState(false)
 
-  // 日付をまたいだKeepを起動時に自動解除
-  useEffect(() => {
-    setItems(prev => {
-      let changed = false
-      const next = prev.map(item => {
-        if (item.isKept && !isKeepActive(item)) {
-          changed = true
-          return { ...item, isKept: false, keptBy: '', keptAt: '' }
-        }
-        return item
-      })
-      return changed ? next : prev
-    })
-  }, [])
+  /* 日付をまたいだKeepは、わざわざ書き換えない。
+     表示も絞り込みも isKeepActive() で日付から判断しているので、
+     データを書き換えなくても「外れている」ように見える。
+
+     以前はここで一括に書き換えていたが、朝いちばんに何十社・何百社の
+     保存がまとめて走り、その画面が抱えていた古い内容まで一緒に
+     書き戻されていた。2026-10-08 には134社が同時に保存され、
+     アポ確定が1社・架電済が2社、古い状態に巻き戻った。
+     書かなければ、その巻き込みは起きない。 */
   const [showCsvImport, setShowCsvImport] = useState(false)
   const [editItem, setEditItem] = useState(null)
   const [initialCompanyName, setInitialCompanyName] = useState('')
