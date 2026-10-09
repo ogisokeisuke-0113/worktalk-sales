@@ -52,14 +52,31 @@ export function createSaveQueue({ name, api, table, url, key }) {
 
   // 重い JSON.stringify 比較はフラッシュ時に1回だけ行う。
   // 9,647件あるので、state が変わるたびにやると描画が詰まる。
+  /* その行で「自分が実際に変えた項目」の名前を並べる。
+     行まるごと送ると、画面が古いままだった項目まで一緒に書き戻してしまう。
+     2026-10-07 までに、架電を記録しただけで担当者名が消える事故が実際に起きた。
+     変えた項目だけ送れば、触っていない項目は相手の最新のまま残る。 */
+  function changedKeys(before, after) {
+    if (!before) return null          // 新規追加。行まるごとで良い
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    const out = []
+    for (const k of keys) {
+      if (JSON.stringify(before[k]) !== JSON.stringify(after[k])) out.push(k)
+    }
+    return out
+  }
+
   function diff() {
     const base = q.baseline || []
     const cur = q.latest || []
     const bm = new Map(base.map(x => [x.id, x]))
-    const changed = cur.filter(it => {
+    const changed = []
+    for (const it of cur) {
       const bf = bm.get(it.id)
-      return !bf || JSON.stringify(bf) !== JSON.stringify(it)
-    })
+      if (!bf) { changed.push({ ...it, __changed: null }); continue }
+      if (JSON.stringify(bf) === JSON.stringify(it)) continue
+      changed.push({ ...it, __changed: changedKeys(bf, it) })
+    }
     const ids = new Set(cur.map(x => x.id))
     const dels = base.filter(x => !ids.has(x.id)).map(x => x.id)
     return { changed, dels, snapshot: cur }

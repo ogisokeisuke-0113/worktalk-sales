@@ -4,10 +4,39 @@ import { supabase } from './supabase'
 // 実測では 500件=OK / 800件=400 Bad Request。安全側に倒して200件ずつ処理する。
 const CHUNK = 200
 
+/* 行まるごとではなく「自分が変えた項目」だけをサーバーの最新に重ねる。
+   画面が古いままだった項目を書き戻さないため（テレアポ側と同じ考え方）。 */
 async function upsertRows(table, items, { withTimestamp = true } = {}) {
   if (!supabase || !items.length) return
+
+  // 変更点が分かる行については、サーバーの現在値を取ってきて重ねる
+  const needMerge = items.filter(i => Array.isArray(i.__changed))
+  const serverMap = {}
+  if (needMerge.length) {
+    const ids = needMerge.map(i => i.id)
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const { data, error } = await supabase.from(table).select('id,data').in('id', ids.slice(i, i + CHUNK))
+      // 取れないまま丸ごと上書きすると、他の人の変更を消しかねない。必ず止める。
+      if (error) throw new Error(`既存データの取得に失敗したため保存を中止しました: ${error.message}`)
+      for (const r of data) serverMap[r.id] = r.data
+    }
+  }
+
   const rows = items.map(item => {
-    const row = { id: item.id, data: item }
+    const server = serverMap[item.id]
+    let data
+    if (server && Array.isArray(item.__changed)) {
+      data = { ...server }
+      for (const k of item.__changed) {
+        if (k === '__changed') continue
+        if (k in item) data[k] = item[k]
+        else delete data[k]
+      }
+    } else {
+      data = { ...item }
+    }
+    delete data.__changed
+    const row = { id: item.id, data }
     if (withTimestamp) row.updated_at = new Date().toISOString()
     return row
   })
@@ -116,9 +145,31 @@ async function upsertTeleapoWithMerge(items) {
       status = serverItem.status
     }
 
+    /* 行まるごとではなく「自分が変えた項目」だけをサーバーの最新に重ねる。
+       画面が古いままだった項目（担当者名・メモなど）を書き戻さないため。
+       __changed が無い＝新規、または変更点が分からない場合は従来どおり全部送る。 */
+    const changed = item.__changed
+    let data
+    if (serverItem && Array.isArray(changed)) {
+      data = { ...serverItem }
+      for (const k of changed) {
+        if (k === '__changed') continue
+        if (k in item) data[k] = item[k]
+        else delete data[k]
+      }
+    } else {
+      data = { ...item }
+    }
+    delete data.__changed
+
+    // 架電履歴と状態は上でマージ・保護した結果を使う
+    data.callHistory = callHistory
+    data.status = status
+    if (deleted.size) data.deletedCalls = [...deleted]
+
     return {
       id: item.id,
-      data: { ...item, callHistory, status, ...(deleted.size ? { deletedCalls: [...deleted] } : {}) },
+      data,
       updated_at: new Date().toISOString(),
     }
   })
