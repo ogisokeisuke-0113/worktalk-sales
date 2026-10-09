@@ -20,7 +20,7 @@ export const company = (id, companyName, over = {}) => ({
   nextCallDate: '', emailStatus: '未送信', appoDate: null, ...over,
 })
 
-export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null, bookmarks = null, appSettings = null } = {}) {
+export async function open(dist, items, { user = 'テスト太郎', failWrites = false, seedOutbox = null, live = null, users = null, bookmarks = null, appSettings = null, serverSide = null } = {}) {
   if (!dist || !fs.existsSync(path.join(dist, 'index.html'))) {
     throw new Error(`dist が見つかりません: ${dist}`)
   }
@@ -63,7 +63,8 @@ export async function open(dist, items, { user = 'テスト太郎', failWrites =
       }
     }
     if (m === 'GET' && u.includes('/teleapo_items')) {
-      if (u.includes('id=in.')) return json(items.map(i => ({ id: i.id, data: i })))
+      // 保存直前にサーバー側を読み直す問い合わせ。画面より新しい内容を返せるようにする
+      if (u.includes('id=in.')) return json(items.map(i => ({ id: i.id, data: (serverSide && serverSide[i.id]) || i })))
       const q = new URL(u).searchParams
       const sel = q.get('select') || ''
       // 差分同期の問い合わせ（updated_at の並べ替え付き）はテスト側の台帳で答える

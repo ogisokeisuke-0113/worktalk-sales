@@ -82,6 +82,9 @@ async function upsertTeleapoWithMerge(items) {
       if (!serverKeys.has(historyKey(c)) && !deleted.has(historyKey(c))) newLogs.push(toCallLogRow(item, c, i))
     })
 
+    // サーバーにあったのに送り主が持っていなかった記録。1件でもあれば、
+    // その画面は古い内容を抱えている（＝他の項目も古い可能性がある）。
+    let stale = 0
     if (serverItem?.callHistory?.length) {
       const keys = new Set(callHistory.map(historyKey))
       for (const c of serverItem.callHistory) {
@@ -90,14 +93,26 @@ async function upsertTeleapoWithMerge(items) {
         if (!keys.has(k) && !deleted.has(k)) {
           callHistory = [...callHistory, c]
           keys.add(k)
+          stale++
         }
       }
       callHistory = callHistory.slice().sort((a, b) => String(a?.date).localeCompare(String(b?.date)))
     }
 
+    /* 古い画面が「アポ確定」を取り消してしまうのを防ぐ。
+       2026-10-08 に実際に起きた：05:44 にアポ獲得で自動昇格したのに、
+       08:09 に古い内容を持った画面が保存して 架電済 へ戻していた。
+       架電履歴はマージで守られていたので、記録だけ残って状態だけ巻き戻る形になる。
+       取り消したいときは、その画面を読み込み直してから操作すれば通る。 */
+    let status = item.status
+    if (stale && serverItem?.status === 'アポ確定' && status !== 'アポ確定') {
+      console.warn(`[db] 古い内容のため「アポ確定」を保ちます: ${item.companyName || item.id}`)
+      status = 'アポ確定'
+    }
+
     return {
       id: item.id,
-      data: { ...item, callHistory, ...(deleted.size ? { deletedCalls: [...deleted] } : {}) },
+      data: { ...item, callHistory, status, ...(deleted.size ? { deletedCalls: [...deleted] } : {}) },
       updated_at: new Date().toISOString(),
     }
   })
