@@ -626,7 +626,8 @@ export default function App() {
     const newId = crypto.randomUUID()
     const newProposal = {
       id: newId,
-      initialDate: new Date().toISOString().slice(0, 10),
+      appointmentDate: new Date().toISOString().slice(0, 10),
+      initialDate: '',
       companyName: teleapoItem.companyName,
       salesRep: currentUser?.name || '',
       contactName: '',
