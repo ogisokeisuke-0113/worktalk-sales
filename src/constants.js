@@ -30,6 +30,11 @@ export const PREFECTURES = [
   '沖縄県',
 ]
 
+// 絞り込み専用の値。都道府県が入っていない企業を抜き出すために使う。
+// 企業情報の入力欄では使わない（入力欄は空欄＝未設定で表せるため）。
+export const PREFECTURE_NONE = '未設定'
+export const PREFECTURE_FILTER_OPTIONS = [PREFECTURE_NONE, ...PREFECTURES]
+
 export const EMPLOYEE_SCALES = [
   '1〜30名',
   '31〜100名',

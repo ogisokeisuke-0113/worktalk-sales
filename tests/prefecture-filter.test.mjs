@@ -6,6 +6,8 @@ const ITEMS = [
   company('a', 'A_東京', { prefecture: '東京都', status: '架電済', callHistory: [call('梶田 祐守', '担当者不在', '2026-09-10T01:00:00.000Z')] }),
   company('b', 'B_大阪', { prefecture: '大阪府', status: '架電済', callHistory: [call('美藤 陸', '不通', '2026-09-10T01:00:00.000Z')] }),
   company('c', 'C_大阪2', { prefecture: '大阪府' }),
+  company('e', 'E_未設定', { prefecture: '' }),
+  company('f', 'F_未設定2', { prefecture: '  ' }),
   company('d', 'D_北海道', { prefecture: '北海道', status: 'アポ確定', callHistory: [call('梶田 祐守', 'アポ獲得', '2026-09-11T01:00:00.000Z')] }),
 ]
 
@@ -24,6 +26,33 @@ await selectOptions(page, '都道府県', ['大阪府'])
 await page.waitForTimeout(700)
 const got = await listedCompanies(page)
 check('大阪府で絞れる', JSON.stringify(got) === JSON.stringify(['B_大阪', 'C_大阪2']), JSON.stringify(got))
+
+/* 都道府県が入っていない企業を抜き出せること */
+await selectOptions(page, '都道府県', ['未設定'])
+await page.waitForTimeout(800)
+const none = await listedCompanies(page)
+check('「未設定」で空の企業だけ出る', JSON.stringify(none) === JSON.stringify(['E_未設定', 'F_未設定2']), JSON.stringify(none))
+
+await selectOptions(page, '都道府県', ['未設定', '北海道'])
+await page.waitForTimeout(800)
+const both = await listedCompanies(page)
+check('未設定と県を同時に選べる', JSON.stringify(both) === JSON.stringify(['D_北海道', 'E_未設定', 'F_未設定2']), JSON.stringify(both))
+
+{
+  // 候補の中身を確かめるためパネルを開く
+  const wrap = page.locator('div').filter({ has: page.locator('label', { hasText: '都道府県' }) }).last()
+  await wrap.locator('button').first().click()
+  await page.waitForTimeout(400)
+  const opts = (await wrap.locator('div.absolute').locator('label').allInnerTexts()).map(t => t.trim())
+  check('候補は47都道府県＋未設定の48件', opts.length === 48, `${opts.length}件`)
+  check('先頭が未設定で、最後は沖縄県', opts[0] === '未設定' && opts[opts.length - 1] === '沖縄県',
+    `${opts[0]} … ${opts[opts.length - 1]}`)
+  await page.locator('body').click({ position: { x: 5, y: 5 } }).catch(() => {})
+  await page.waitForTimeout(300)
+}
+
+await selectOptions(page, '都道府県', ['大阪府'])
+await page.waitForTimeout(800)
 
 // 企業カードにエリアが出ること
 const areaShown = await page.evaluate(() => {

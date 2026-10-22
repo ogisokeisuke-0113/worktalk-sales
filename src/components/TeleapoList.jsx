@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import PhoneLinks from './PhoneLinks'
 import { dialHref } from '../lib/phone'
-import { PREFECTURES, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
+import { PREFECTURES, PREFECTURE_NONE, PREFECTURE_FILTER_OPTIONS, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
@@ -859,12 +859,10 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
               <label className="block text-xs font-medium text-slate-600 mb-1">従業員規模</label>
               <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="すべて" fullWidth />
             </div>
-            {allPrefectures.length > 0 && (
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">都道府県</label>
-                <MultiSelect selected={filters.prefecture || []} onChange={v => setFilter('prefecture', v)} options={allPrefectures} placeholder="すべて" fullWidth />
-              </div>
-            )}
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">都道府県</label>
+              <MultiSelect selected={filters.prefecture || []} onChange={v => setFilter('prefecture', v)} options={PREFECTURE_FILTER_OPTIONS} placeholder="すべて" fullWidth />
+            </div>
             {allListSources.length > 0 && (
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">リストソース</label>
@@ -1518,12 +1516,10 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 <label className="block text-xs font-medium text-slate-500 mb-1">従業員規模</label>
                 <MultiSelect selected={filters.employeeScale} onChange={v => setFilter('employeeScale', v)} options={EMPLOYEE_SCALES} placeholder="すべて" fullWidth />
               </div>
-              {allPrefectures.length > 0 && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">都道府県</label>
-                  <MultiSelect selected={filters.prefecture || []} onChange={v => setFilter('prefecture', v)} options={allPrefectures} placeholder="すべて" fullWidth />
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">都道府県</label>
+                <MultiSelect selected={filters.prefecture || []} onChange={v => setFilter('prefecture', v)} options={PREFECTURE_FILTER_OPTIONS} placeholder="すべて" fullWidth />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">Keep状態</label>
                 <select value={filters.kept} onChange={e => setFilter('kept', e.target.value)}
@@ -2294,7 +2290,12 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       }
       if ((filters.listSource || []).length && !filters.listSource.includes(item.listSource || '')) return false
       if (filters.nextCallDateUntil && (!item.nextCallDate || item.nextCallDate > filters.nextCallDateUntil)) return false
-      if ((filters.prefecture || []).length && !filters.prefecture.includes(item.prefecture || '')) return false
+      if ((filters.prefecture || []).length) {
+        // 「未設定」は都道府県の値ではなく「空であること」。他の県と同時に選べる。
+        const pref = String(item.prefecture || '').trim()
+        const ok = filters.prefecture.some(v => (v === PREFECTURE_NONE ? !pref : v === pref))
+        if (!ok) return false
+      }
       if (filters.hasContact === 'true' && !item.contactName) return false
       if (filters.hasContact === 'false' && item.contactName) return false
       if ((filters.callType || []).length) {
