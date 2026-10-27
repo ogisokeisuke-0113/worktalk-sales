@@ -183,6 +183,7 @@ export const NEXT_ACTIONS = [
 ]
 
 export const MEETING_RESULTS = [
+  '初回商談済み',
   '担当者合意',
   '決裁者合意',
   '受注',
