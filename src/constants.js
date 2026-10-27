@@ -47,6 +47,7 @@ export const EMPLOYEE_SCALES = [
 
 export const PROPOSAL_STATUSES = [
   'アポ確定',
+  '初回商談済み',
   '担当者合意',
   '決裁者アポ調整中',
   '決裁者合意',
@@ -195,6 +196,7 @@ export const MEETING_RESULTS = [
 
 export const STATUS_COLORS = {
   'アポ確定': 'bg-sky-100 text-[#2d6a9e]',
+  '初回商談済み': 'bg-violet-50 text-[#6d28d9]',
 
   '担当者合意': 'bg-amber-50 text-[#b45309]',
   '決裁者アポ調整中': 'bg-slate-100 text-[#5a7a8a]',
@@ -221,6 +223,7 @@ export const EMAIL_STATUS_COLORS = {
 
 export const KANBAN_BORDER_COLORS = {
   'アポ確定': 'border-l-[#4a82ae]',
+  '初回商談済み': 'border-l-[#6d28d9]',
 
   '担当者合意': 'border-l-[#b45309]',
   '決裁者アポ調整中': 'border-l-[#5a7a8a]',
@@ -231,6 +234,7 @@ export const KANBAN_BORDER_COLORS = {
 
 export const KANBAN_HEADER_COLORS = {
   'アポ確定': 'bg-sky-200 text-[#2d6a9e]',
+  '初回商談済み': 'bg-violet-100 text-[#6d28d9]',
 
   '担当者合意': 'bg-amber-100 text-[#b45309]',
   '決裁者アポ調整中': 'bg-slate-200 text-[#5a7a8a]',
