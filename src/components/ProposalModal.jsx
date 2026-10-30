@@ -654,10 +654,11 @@ JSONのみ出力してください。`
                   {/* メモ（最小化） */}
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">メモ（補足のみ）</label>
-                    <input type="text" value={meetingForm.note || ''}
+                    <textarea value={meetingForm.note || ''}
                       onChange={e => setMeetingForm(p => ({ ...p, note: e.target.value }))}
                       placeholder="上記で表現できない補足情報のみ"
-                      className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                      rows={3}
+                      className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
                   </div>
 
                   <div className="flex justify-end gap-2 pt-1">
@@ -723,7 +724,7 @@ JSONのみ出力してください。`
                           → {m.nextAction}{m.nextActionDate ? `（${m.nextActionDate}）` : ''}
                         </p>
                       )}
-                      {m.note && <p className="text-xs text-slate-400 mt-1">{m.note}</p>}
+                      {m.note && <p className="text-xs text-slate-400 mt-1 whitespace-pre-wrap">{m.note}</p>}
                     </div>
                   ))}
                 </div>
