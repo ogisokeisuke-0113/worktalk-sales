@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import PhoneLinks from './PhoneLinks'
 import { dialHref } from '../lib/phone'
-import { PREFECTURES, PREFECTURE_NONE, PREFECTURE_FILTER_OPTIONS, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
+import { PREFECTURES, PREFECTURE_NONE, PREFECTURE_FILTER_OPTIONS, TELEAPO_STATUSES, TELEAPO_STATUS_COLORS, INDUSTRIES, SUB_INDUSTRIES, EMPLOYEE_SCALES, CALL_RESULTS, CALL_REJECTION_REASONS, CALL_TYPES, EMAIL_STATUSES, EMAIL_STATUS_COLORS, RELATIONSHIPS, CALL_RESULT_NONE, CALL_RESULT_FILTER_OPTIONS} from '../constants'
 import TeleapoCsvImport from './TeleapoCsvImport'
 import MultiSelect from './MultiSelect'
 import CompanyLink from './CompanyLink'
@@ -190,6 +190,7 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
     contactName: '',
     contactPosition: '',
     industry: '',
+    subIndustry: '',
     employeeScale: '',
     salesRep: '',
     status: '未架電',
@@ -264,11 +265,20 @@ function CompanyModal({ item, onSave, onClose, salesReps, initialCompanyName = '
             {/* 企業属性 */}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">業種</label>
-              <select value={form.industry} onChange={e => set('industry', e.target.value)} className={INPUT}>
+              <select value={form.industry} onChange={e => { set('industry', e.target.value); set('subIndustry', '') }} className={INPUT}>
                 <option value="">未設定</option>
                 {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
               </select>
             </div>
+            {SUB_INDUSTRIES[form.industry]?.length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">中業種</label>
+                <select value={form.subIndustry || ''} onChange={e => set('subIndustry', e.target.value)} className={INPUT}>
+                  <option value="">未設定</option>
+                  {SUB_INDUSTRIES[form.industry].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">従業員規模</label>
               <select value={form.employeeScale} onChange={e => set('employeeScale', e.target.value)} className={INPUT}>
@@ -660,7 +670,7 @@ function DetailPanel({ item, onClose, onUpdate, onEdit, onPromote, onDelete, cur
           <div className="grid grid-cols-2 gap-3">
             {[
               ['担当者名', item.contactName ? `${item.contactName}${item.contactPosition ? ` / ${item.contactPosition}` : ''}` : null],
-              ['業種', item.industry],
+              ['業種', item.industry ? `${item.industry}${item.subIndustry ? ` / ${item.subIndustry}` : ''}` : null],
               ['従業員規模', item.employeeScale],
               ['エリア', item.prefecture],
               ['売上規模', item.salesScale],
@@ -782,6 +792,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
   const activeCount = [
     filters.status.length > 0,
     filters.industry.length > 0,
+    (filters.subIndustry || []).length > 0,
     filters.salesRep.length > 0,
     filters.callCount,
     filters.employeeScale.length > 0,
@@ -806,7 +817,7 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
   ].filter(Boolean).length
 
   const handleClear = () => {
-    setFilters({ status: [], industry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '', prefecture: [], hasContact: '', callType: [], callContent: [], keepHasHistory: '', keepCountMin: '', keepDateFrom: '', keepDateTo: '', keepBy: [] })
+    setFilters({ status: [], industry: [], subIndustry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '', prefecture: [], hasContact: '', callType: [], callContent: [], keepHasHistory: '', keepCountMin: '', keepDateFrom: '', keepDateTo: '', keepBy: [] })
     setSearchText('')
   }
 
@@ -853,7 +864,19 @@ function SearchPage({ filters, setFilters, searchText, setSearchText, onSearch, 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">業種</label>
-              <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="すべて" fullWidth />
+              <MultiSelect selected={filters.industry} onChange={v => { setFilter('industry', v); setFilter('subIndustry', []) }} options={INDUSTRIES} placeholder="すべて" fullWidth />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">中業種</label>
+              <MultiSelect
+                selected={filters.subIndustry || []}
+                onChange={v => setFilter('subIndustry', v)}
+                options={filters.industry.length > 0
+                  ? [...new Set(filters.industry.flatMap(ind => SUB_INDUSTRIES[ind] || []))]
+                  : [...new Set(Object.values(SUB_INDUSTRIES).flat())]}
+                placeholder="すべて"
+                fullWidth
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">従業員規模</label>
@@ -1306,7 +1329,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
   }
 
   const handleClearAll = () => {
-    setFilters({ status: [], industry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '', prefecture: [], hasContact: '', callType: [], callContent: [], keepHasHistory: '', keepCountMin: '', keepDateFrom: '', keepDateTo: '', keepBy: [] })
+    setFilters({ status: [], industry: [], subIndustry: [], salesRep: [], callCount: '', employeeScale: [], kept: '', callDateFrom: '', callDateTo: '', emailStatus: '', callResult: [], listSource: [], nextCallDateUntil: '', prefecture: [], hasContact: '', callType: [], callContent: [], keepHasHistory: '', keepCountMin: '', keepDateFrom: '', keepDateTo: '', keepBy: [] })
     setSearchText('')
   }
 
@@ -1314,6 +1337,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
   const activeFilterCount = [
     filters.status.length > 0,
     filters.industry.length > 0,
+    (filters.subIndustry || []).length > 0,
     filters.salesRep.length > 0,
     filters.callCount,
     filters.employeeScale.length > 0,
@@ -1334,6 +1358,7 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
   const filterBadges = []
   if (filters.status.length) filters.status.forEach(s => filterBadges.push({ label: s, onRemove: () => setFilters(prev => ({ ...prev, status: prev.status.filter(v => v !== s) })) }))
   if (filters.industry.length) filters.industry.forEach(s => filterBadges.push({ label: s, onRemove: () => setFilters(prev => ({ ...prev, industry: prev.industry.filter(v => v !== s) })) }))
+  if ((filters.subIndustry || []).length) filters.subIndustry.forEach(s => filterBadges.push({ label: `中業種:${s}`, onRemove: () => setFilters(prev => ({ ...prev, subIndustry: (prev.subIndustry || []).filter(v => v !== s) })) }))
   if (filters.salesRep.length) filters.salesRep.forEach(s => filterBadges.push({ label: s, onRemove: () => setFilters(prev => ({ ...prev, salesRep: prev.salesRep.filter(v => v !== s) })) }))
   if (filters.employeeScale.length) filters.employeeScale.forEach(s => filterBadges.push({ label: s, onRemove: () => setFilters(prev => ({ ...prev, employeeScale: prev.employeeScale.filter(v => v !== s) })) }))
   if (filters.callCount) {
@@ -1496,7 +1521,19 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">業種</label>
-                <MultiSelect selected={filters.industry} onChange={v => setFilter('industry', v)} options={INDUSTRIES} placeholder="すべて" fullWidth />
+                <MultiSelect selected={filters.industry} onChange={v => { setFilter('industry', v); setFilter('subIndustry', []) }} options={INDUSTRIES} placeholder="すべて" fullWidth />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">中業種</label>
+                <MultiSelect
+                  selected={filters.subIndustry || []}
+                  onChange={v => setFilter('subIndustry', v)}
+                  options={filters.industry.length > 0
+                    ? [...new Set(filters.industry.flatMap(ind => SUB_INDUSTRIES[ind] || []))]
+                    : [...new Set(Object.values(SUB_INDUSTRIES).flat())]}
+                  placeholder="すべて"
+                  fullWidth
+                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">最終架電者・担当確定</label>
@@ -1721,7 +1758,9 @@ function ResultsPage({ filtered, items, filters, setFilters, searchText, setSear
                 {/* 左カラム: 業種・規模・メタ情報 */}
                 <div className="bg-slate-50 rounded-xl px-3 py-2.5">
                   {item.industry && (
-                    <p className="text-base font-bold text-slate-700 leading-tight">{item.industry}</p>
+                    <p className="text-base font-bold text-slate-700 leading-tight">
+                      {item.industry}{item.subIndustry ? ` / ${item.subIndustry}` : ''}
+                    </p>
                   )}
                   {item.employeeScale && (
                     <p className="text-sm font-semibold text-slate-500 mt-0.5">{item.employeeScale}</p>
@@ -2107,6 +2146,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
   const [filters, setFilters] = useState({
     status: [],
     industry: [],
+    subIndustry: [],
     salesRep: [],
     callCount: '',
     employeeScale: [],
@@ -2137,6 +2177,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
       setFilters({
         status: toArr(initialFilter.status),
         industry: toArr(initialFilter.industry),
+        subIndustry: [],
         salesRep: initialFilter.salesRep ? toArr(initialFilter.salesRep) : tf,
         callCount: '',
         employeeScale: toArr(initialFilter.employeeScale),
@@ -2211,6 +2252,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
     return items.filter(item => {
       if (filters.status.length && !filters.status.includes(item.status)) return false
       if (filters.industry.length && !filters.industry.includes(item.industry)) return false
+      if ((filters.subIndustry || []).length && !filters.subIndustry.includes(item.subIndustry)) return false
       if (filters.salesRep.length && !filters.salesRep.includes(personInCharge(item)?.name)) return false
       if (filters.employeeScale.length && !filters.employeeScale.includes(item.employeeScale)) return false
       if (filters.kept === 'true' && !isKeepActive(item)) return false
@@ -2307,7 +2349,7 @@ export default function TeleapoList({ items, setItems, onPromote, proposals = []
         if (!history.some(c => filters.callContent.includes(c.callContent))) return false
       }
       if (q) {
-        const hay = [item.companyName, item.phone, item.contactName, item.salesRep, item.industry, item.memo]
+        const hay = [item.companyName, item.phone, item.contactName, item.salesRep, item.industry, item.subIndustry, item.memo]
           .filter(Boolean).join(' ').toLowerCase()
         if (!hay.includes(q)) return false
       }
