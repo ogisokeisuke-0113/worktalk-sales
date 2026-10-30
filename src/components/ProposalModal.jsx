@@ -657,8 +657,8 @@ JSONのみ出力してください。`
                     <textarea value={meetingForm.note || ''}
                       onChange={e => setMeetingForm(p => ({ ...p, note: e.target.value }))}
                       placeholder="上記で表現できない補足情報のみ"
-                      rows={3}
-                      className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none" />
+                      rows={4}
+                      className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y" />
                   </div>
 
                   <div className="flex justify-end gap-2 pt-1">
